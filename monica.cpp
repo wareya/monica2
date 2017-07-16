@@ -293,7 +293,8 @@ struct graphics
                 }
             }
         }
-        return ceil(real_x);
+        if(real_x > max_real_x) max_real_x = real_x;
+        return ceil(max_real_x);
     }
     
     // Renders unicode text, wrapping at the right edge of the window if necessary. Does not support right-to-left or vertical text or ligatures, but does support kerning and astral unicode.
@@ -983,9 +984,11 @@ int main()
     mydeckui.insert_into(elements);
     
     // Pointless test text
-    elements.push_back(new element(posdata(-backend.string_width_pixels("つづく", 32)-10, LATE), posdata(-40, LATE), posdata(0, LATE), posdata(32, EARLY), false, false,
-        "つづく",
-        0, 0, 32, {0,0,0}, {255,255,255}));
+    const char * prealphawarning = "Prealpha Software\nプレアルファ";
+    int prealphasize = 16;
+    elements.push_back(new element(posdata(-backend.string_width_pixels(prealphawarning, prealphasize), LATE), posdata(-prealphasize*2, LATE), posdata(0, LATE), posdata(prealphasize, EARLY), false, false,
+        prealphawarning,
+        0, 0, prealphasize, {0,0,0}, {255,255,255}));
     
     // Main loop / mainloop
     while(1)
