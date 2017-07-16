@@ -143,6 +143,7 @@ uint32_t utf8_pull(const char * text, long long len, int * advance)
     return utf8_pull((const unsigned char *)text, len, advance);
 }
 
+// SDL_MapRGB is written in a way that makes compilers not optimize it well for the most common surface format. This wrapper is more optimization-friendly.
 uint32_t MapRGB(const SDL_PixelFormat * format, Uint8 r, Uint8 g, Uint8 b)
 {
     if(format->format == SDL_PIXELFORMAT_RGB888)
@@ -152,6 +153,7 @@ uint32_t MapRGB(const SDL_PixelFormat * format, Uint8 r, Uint8 g, Uint8 b)
 }
 
 // Because for some reason std::fill doesn't let you specify the number of bytes
+// (We actually use this elsewhere anyway, so all's well that ends well)
 struct triad
 {
     uint8_t r;
@@ -161,8 +163,8 @@ struct triad
 
 bool render = false;
 
+// Rasterization is slow, so we cache glyphs inside the element that's rendering them. These are just definitions.
 bool cache = true;
-
 struct crap // bitmap cache metadata related
 {
     uint8_t * data;
@@ -175,9 +177,12 @@ struct crap // bitmap cache metadata related
         yoff = 0;
     }
 };
-
 crap bitmap_lookup(stbtt_fontinfo * fontinfo, std::map<uint64_t, crap> * bitmapcache, uint32_t index, float offset, float fontscale)
 {
+    // We don't do subpixel AA, but we do do subpixel offset rendering.
+    // We keep track of their subpixel offset when we cache glyphs.
+    // If this had full floating point resolution it would make the cache fill up with extremely similar glyphs, so we round subpixel advancement to to 1/3 pixel resolution.
+    // This is not subpixel AA, this is subpixel advancement.
     int subpixel = floor(offset*3);
     if(subpixel == 4) subpixel = 3;
     uint64_t key = (uint64_t(index) << 2) + (subpixel & 0b11);
@@ -200,24 +205,26 @@ struct graphics
     
     void init()
     {
-        SDL_SetHint(SDL_HINT_FRAMEBUFFER_ACCELERATION, "0");
-        win = SDL_CreateWindow("monica srs", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 800, 600, SDL_WINDOW_RESIZABLE);
-        surface = SDL_GetWindowSurface(win);
+        SDL_SetHint(SDL_HINT_FRAMEBUFFER_ACCELERATION, "0"); // We software render everything and uploading it to the GPU every frame takes time. The compositor does it itself anyway if it needs to.
+        win = SDL_CreateWindow("monica srs", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 800, 600, SDL_WINDOW_RESIZABLE); // TODO: Handle failure
+        surface = SDL_GetWindowSurface(win); // TODO: Handle NULL (is it possible?)
         
-        auto fontfile = fopen("NotoSansCJKjp-Regular.otf", "rb");
-        if(!fontfile) puts("failed to open font file");
+        auto fontfile = fopen("NotoSansCJKjp-Regular.otf", "rb"); // TODO: don't assume a fixed font
+        if(!fontfile) puts("failed to open font file"); // TODO: Handle failure
         fseek(fontfile, 0, SEEK_END);
         uint64_t fontsize = ftell(fontfile);
         unsigned char * buffer = (unsigned char*)malloc(fontsize);
         fseek(fontfile, 0, SEEK_SET);
-        if(fread(buffer, 1, fontsize, fontfile) != fontsize)
+        if(fread(buffer, 1, fontsize, fontfile) != fontsize) // TODO: Handle failure
             puts("failed to read font file");
         fclose(fontfile);
         
-        if(stbtt_InitFont(&fontinfo, buffer, stbtt_GetFontOffsetForIndex(buffer, 0)) == 0)
+        if(stbtt_InitFont(&fontinfo, buffer, stbtt_GetFontOffsetForIndex(buffer, 0)) == 0) // TODO: Handle failure
             puts("Something happened initializing the font");
     }
     
+    // Cache glyph index lookup for the active font.
+    // TODO: Don't assume there's only one font
     std::map<uint32_t, uint32_t> indexcache;
     uint32_t glyph_lookup(uint32_t codepoint)
     {
@@ -231,6 +238,7 @@ struct graphics
         }
     }
     
+    // Gets how tall the font's ascent and descent area is if rendered at the given size.
     int font_height_pixels(float size)
     {
         float fontscale = stbtt_ScaleForPixelHeight(&fontinfo, size);
@@ -239,6 +247,7 @@ struct graphics
         return (ascent-descent)*fontscale;
     }
     
+    // Gets how wide in pixels the string would be with no wrapping if rendered at the given size. Measures virtual cursor advancement, not pixel coverage area.
     int string_width_pixels(const char * text, float size)
     {
         float fontscale = stbtt_ScaleForPixelHeight(&fontinfo, size);
@@ -278,6 +287,8 @@ struct graphics
         return ceil(real_x);
     }
     
+    // Renders unicode text, wrapping at the right edge of the window if necessary. Does not support right-to-left or vertical text or ligatures, but does support kerning and astral unicode.
+    // Takes a bitmap cache because font rasterization is not actually that fast.
     void string(SDL_Surface * surface, std::map<uint64_t, crap> * cache, int x, int y, const char * text, uint8_t red, uint8_t green, uint8_t blue, float size)
     {
         float fontscale = stbtt_ScaleForPixelHeight(&fontinfo, size);
@@ -287,6 +298,7 @@ struct graphics
         size_t textlen = strlen(text);
         uint32_t lastindex = 0;
         
+        // stb_truetype's coordinate system renders at the baseline instead of the top left. That's fine but we want to render at the top left.
         int ascent, descent, linegap;
         stbtt_GetFontVMetrics(&fontinfo, &ascent, &descent, &linegap);
         int linespan = ascent - descent + linegap;
@@ -313,6 +325,8 @@ struct graphics
                         real_x = x;
                         continue;
                     }
+                    
+                    // black magic begin
                     
                     int advance, bearing, width, height, xoff, yoff;
                     
@@ -342,10 +356,13 @@ struct graphics
                     xoff = stuff.xoff;
                     yoff = stuff.yoff;
                     uint8_t * data = stuff.data;
-                    // reinsert 
                     
+                    // black magic end
+                    
+                    // alpha-mixing glyph bitmap blitter
                     if(render)
                     {
+                        // Avoid SDL_GetRGB/MapRGB if we're using the common trivial pixel format
                         if(surface->format->format == SDL_PIXELFORMAT_RGB888)
                         {
                             for(int i = 0; i < height; i++)
@@ -359,10 +376,10 @@ struct graphics
                                     if (out_x < 0) continue;
                                     if (out_x >= surface->w) break;
                                     const float alpha = data[i*width + j]/255.0f;
-                                    if(alpha > 0.5f/255.0f)
+                                    if(alpha > 0.5f/255.0f) // skip trivial blank case
                                     {
                                         uint8_t * const pointer = ((uint8_t *)surface->pixels) + (out_y*surface->pitch + out_x*4);
-                                        if(alpha >= 1.0f)
+                                        if(alpha >= 1.0f) // optimize trivial opaque case
                                         {
                                             pointer[2] = red;
                                             pointer[1] = green;
@@ -420,18 +437,20 @@ struct graphics
         }
     }
     
+    // SDL surface pointers become invalid if the screen is resized, which we want to support. It turns out this is downright trivial to support, you just grab the surface pointer again.
     void resurface()
     {
         surface = SDL_GetWindowSurface(win);
     }
     
-    std::map<uint64_t, crap> bitmapcache;
+    // Basically just a flip queue
     void update()
     {
         SDL_UpdateWindowSurface(win);
         fill(surface, 0,0,0);
     }
     
+    // Fill the screen with a given color; optimized for four-byte surface formats, otherwise uses rect rendering
     void fill(SDL_Surface * surface, float r, float g, float b)
     {
         const int bytes = surface->format->BytesPerPixel;
@@ -448,6 +467,7 @@ struct graphics
         return;
     }
     
+    // Rect coordinates are inclusive (0,0,0,0 fills in a full pixel, 0,0,1,1 fills in four pixels) and must be ordered (x1 <= x2, y1 <= y2)
     void rect(SDL_Surface * surface, float r, float g, float b, int ax1, int ay1, int ax2, int ay2)
     {
         #if USE_SDL_EVERYWHERE
@@ -457,9 +477,10 @@ struct graphics
         rect_.h = ay2-ay1+1;
         SDL_FillRect(surface, &rect_, MapRGB(surface->format, r, g, b));
         #else
-        
+        // Using std::fill is slightly faster in some situations, plus I don't want to depend too much on SDL in case I want to switch away
         uint32_t const color = MapRGB(surface->format, r, g, b);
         
+        // Clip rect start and end 
         int y1 = ay1;
         int x1 = ax1;
         if(y1 >= surface->h) y1 = surface->h-1;
@@ -480,6 +501,7 @@ struct graphics
         const int bytes = surface->format->BytesPerPixel;
         uint8_t * const start = (uint8_t *)surface->pixels + y1*surface->pitch + x1*bytes;
         
+        // Ｗｈｙ does SDL allow formats where the pitch is not just the width times the number of bytes per pixel. God damn it.
         if(bytes == 4)
         {
             for(uint8_t * pointer = start; pointer < start + h*surface->pitch; pointer += surface->pitch)
@@ -505,6 +527,7 @@ struct graphics
         #endif
     }
     
+    // An outline is just four pixel-wide rects
     void rect_outline(SDL_Surface * surface, float r, float g, float b, int x1, int y1, int x2, int y2)
     {
         rect(surface, r, g, b, x1, y1, x2, y1);
@@ -514,19 +537,13 @@ struct graphics
     }
 };
 
-enum action {
-    NONE,
-    FLIP,
-    FLUNK,
-    GOOD
-};
-
+// Positions can be relative to the top, equator, or bottom; or left, meridian, or right side of the screen, and might be in screenspace percentile units instead of pixels
+// height/width data uses raw positions and are further relative to another position, but that relativeness is handled in whatever uses those height/width values
 enum reference {
     EARLY,
     CENTER,
     LATE
 };
-
 struct posdata {
     reference position; // topleft, center, bottomright
     bool proportional; // false: pixels; true: screenspace percentages
@@ -539,6 +556,13 @@ struct posdata {
     }
 };
 
+// A UI element is a bunch of visual data, and might be a button of some kind
+enum action {
+    NONE,
+    FLIP,
+    FLUNK,
+    GOOD
+};
 struct element {
     posdata x, y, w, h;
     bool drawbg, outline;
@@ -617,6 +641,7 @@ struct element {
         }
     }
     
+    // Get the given coordinate according to the graphics backend given
     int y1(graphics * backend)
     {
         int y1 = y.offset;
@@ -652,6 +677,7 @@ struct element {
     }
 };
 
+// a note is a collection of fields, loaded here from a TSV line
 struct note {
     std::vector<std::string> fields;
     note(std::string line)
@@ -665,6 +691,11 @@ struct note {
         std::string current;
         
         size_t textlen = strlen(start);
+        // Allows quote-encapsulated fields.
+        // Quotes must be adjacent to the relevant tab to be treated as encapculation quotes. String [asdf\t"gjrfger"gjafg"awefsdg"\t"fdhjdfh"] is three fields.
+        // Quotes can be escaped with a \.
+        // \ can be escaped with a \ but does not have to be if it's not ambiguous.
+        // Newlines are \n. 0x20 in the byte stream triggers the end of the line, just like 0x00.
         while(text - start < textlen)
         {
             if(!quoted and *text == '"')
@@ -684,6 +715,7 @@ struct note {
                     fields.push_back(current);
                     current = "";
                 }
+                // FIXME: There's a pointer advancement bug here. Can you find it?
                 else if(*text == '\t' or *text == '\n' or *text == '\0') // only " that are adjecant with a tab are the end " to a field
                 {
                     fields.push_back(current);
@@ -726,6 +758,7 @@ struct note {
     }
 };
 
+// a formatting element is a virtual version of a UI element
 struct formatting
 {
     posdata x, y, w, h;
@@ -736,6 +769,7 @@ struct formatting
     int type; // 0: common; 1: front only; 2: answer only
 };
 
+// a card is just a list of formatting elements
 struct format
 {
     std::vector<formatting *> formatting;
@@ -747,12 +781,14 @@ struct format
     }
 };
 
+// a deck is a collection of notes and cards
 struct deck
 {
     std::vector<note *> notes;
     std::vector<format *> cards;
 };
 
+// user interface for the deck
 struct deckui
 {
     std::vector<std::pair<formatting *, element *>> associations;
@@ -761,8 +797,11 @@ struct deckui
     
     deckui()
     {
+        // test data, gonna implement deck loading properly later
         currentdeck.notes.push_back(new note("日本\tにほん\\nにっぽん\t\"japan\t/\tjapan (archaic)\""));
         currentdeck.notes.push_back(new note("犬\tいぬ\tdog"));
+        currentdeck.notes.push_back(new note("𠂇\t\thand"));
+        // Modern C++ :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^)
         auto common = new formatting {posdata(20, EARLY, true), posdata(20, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "{0}", 64, true, 0};
         auto front = new formatting {posdata(20, EARLY, true), posdata(40, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "({1})", 64, true, 1};
         auto answer = new formatting {posdata(20, EARLY, true), posdata(50, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "Meaning: {2}", 32, true, 2};
@@ -770,6 +809,7 @@ struct deckui
         
         currentnote = 0;
         
+        // make UI elements for all of the formatting elements in our card definition
         for(auto card : currentdeck.cards)
         {
             for(auto e : card->formatting)
@@ -787,6 +827,7 @@ struct deckui
         refresh(currentnote);
     }
     
+    // takes a card formatting string and formats in a note
     std::string do_format(std::string & format, std::vector<note *> & notes, int index)
     {
         std::string formatted = "";
@@ -809,7 +850,6 @@ struct deckui
             }
             else if(capsulated and *text == '}')
             {
-                // TODO: use and reset capsule
                 try
                 {
                     int num = std::stoi(capsule);
@@ -861,6 +901,7 @@ struct deckui
         return current;
     }
     
+    // shows the front of the given card
     void refresh(int index)
     {
         for(auto p : associations)
@@ -873,6 +914,7 @@ struct deckui
         }
     }
     
+    // shows the back of the current card
     void flip()
     {
         for(auto p : associations)
@@ -884,6 +926,7 @@ struct deckui
         }
     }
     
+    // advances to the next note
     void next()
     {
         currentnote++;
@@ -891,6 +934,7 @@ struct deckui
         refresh(currentnote);
     }
     
+    // informs the UI about our UI elements
     void insert_into(std::vector<element*> & elements)
     {
         for(auto p : associations)
@@ -903,6 +947,7 @@ struct deckui
 
 int main()
 {
+    // Initialize
     std::vector<element*> elements;
     
     graphics backend;
@@ -912,6 +957,7 @@ int main()
     auto start = SDL_GetTicks();
     float smoothtime = 0;
     
+    // UI buttons
     auto b_flip = new element(posdata(0), posdata(-32, LATE), posdata(0, LATE), posdata(32, EARLY), "flip", 24, {127,127,127}, {255,255,255}, FLIP);
     elements.push_back(b_flip);
     
@@ -923,28 +969,33 @@ int main()
     b_good->active = false;
     elements.push_back(b_good);
     
+    // Debug deck
     deckui mydeckui;
-    
     mydeckui.insert_into(elements);
     
+    // Pointless test text
     elements.push_back(new element(posdata(-backend.string_width_pixels("つづく", 32)-10, LATE), posdata(-40, LATE), posdata(0, LATE), posdata(32, EARLY), false, false,
         "つづく",
         0, 0, 32, {0,0,0}, {255,255,255}));
     
+    // Main loop / mainloop
     while(1)
     {
         SDL_Event event;
         static element * pressedelement = nullptr;
         while (SDL_PollEvent(&event))
         {
+            // Long term todo: hook in database saving stuff
             if (event.type == SDL_QUIT)
                 exit(0);
             
+            // Re-grab rendering surface if the window is resized
             if (event.type == SDL_WINDOWEVENT)
             {
                 if(event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
                     backend.resurface();
             }
+            // We use the "must press and release on the same element to trigger an input" button model, and dim buttons while they're held down
             if (event.type == SDL_MOUSEBUTTONDOWN)
             {
                 element * foundelement = nullptr;
@@ -979,6 +1030,7 @@ int main()
                 }
                 if(foundelement == pressedelement and foundelement != nullptr)
                 {
+                    // TODO: Make FLUNK and GOOD have their own deckui methods.
                     switch(foundelement->clickaction)
                     {
                     case FLIP:
@@ -1005,6 +1057,7 @@ int main()
             }
         }
         
+        // Render everything in painter's order. There is no depth information, everything is rendered in the order in which it was all added to the element list.
         for (auto element : elements)
         {
             if(!element) continue;
