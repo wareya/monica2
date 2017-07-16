@@ -256,6 +256,8 @@ struct graphics
         
         size_t textlen = strlen(text);
         uint32_t lastindex = 0;
+        
+        float max_real_x = 0;
         while(textlen > 0)
         {
             int advance = 0;
@@ -269,6 +271,13 @@ struct graphics
                 text += advance;
                 if (codepoint != 0xFFFFFFFF)
                 {
+                    if(codepoint == '\n')
+                    {
+                        lastindex = 0;
+                        if(real_x > max_real_x) max_real_x = real_x;
+                        real_x = 0;
+                        continue;
+                    }
                     int advance, bearing;
                     
                     uint32_t index = glyph_lookup(codepoint);
