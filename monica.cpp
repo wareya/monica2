@@ -652,10 +652,259 @@ struct element {
     }
 };
 
-std::vector<element*> elements;
+struct note {
+    std::vector<std::string> fields;
+    note(std::string line)
+    {
+        const char * text = line.data();
+        const char * start = text;
+        
+        bool quoted = false; // -1: unknown (start state); 0: false; 1: true
+        bool escaping = false;
+        
+        std::string current;
+        
+        size_t textlen = strlen(start);
+        while(text - start < textlen)
+        {
+            if(!quoted and *text == '"')
+            {
+                quoted = true;
+            }
+            else if(*text == '\t' and !quoted)
+            {
+                fields.push_back(current);
+                current = "";
+            }
+            else if(*text == '"' and quoted and !escaping)
+            {
+                text++;
+                if(text - start >= textlen)
+                {
+                    fields.push_back(current);
+                    current = "";
+                }
+                else if(*text == '\t' or *text == '\n' or *text == '\0') // only " that are adjecant with a tab are the end " to a field
+                {
+                    fields.push_back(current);
+                    current = "";
+                }
+                else
+                    current += '"';
+            }
+            else if(*text == '\\' and !escaping)
+            {
+                escaping = true;
+            }
+            else if(*text == '\n' or *text == '\0')
+            {
+                fields.push_back(current);
+                break;
+            }
+            else if (escaping)
+            {
+                if(*text == '\\') // escaped backslash
+                    current += '\\';
+                else if(*text == 'n') // newline escape
+                    current += '\n';
+                else if(*text == '"') // escaped quote
+                    current += '"';
+                else // false escape, just a backslash followed by the current character
+                {
+                    current += '\\';
+                    current += *text;
+                }
+                escaping = false;
+            }
+            else
+                current += *text;
+            
+            text++;
+        }
+        if(current != "")
+            fields.push_back(current);
+    }
+};
+
+struct formatting
+{
+    posdata x, y, w, h;
+    uint8_t r, g, b;
+    std::string format;
+    int fontsize;
+    bool centered;
+    int type; // 0: common; 1: front only; 2: answer only
+};
+
+struct format
+{
+    std::vector<formatting *> formatting;
+    ~format()
+    {
+        for(auto i : formatting)
+            delete i;
+        formatting = {};
+    }
+};
+
+struct deck
+{
+    std::vector<note *> notes;
+    std::vector<format *> cards;
+};
+
+struct deckui
+{
+    std::vector<std::pair<formatting *, element *>> associations;
+    int currentnote = 0;
+    deck currentdeck;
+    
+    deckui()
+    {
+        currentdeck.notes.push_back(new note("日本\tにほん\\nにっぽん\t\"japan\t/\tjapan (archaic)\""));
+        currentdeck.notes.push_back(new note("犬\tいぬ\tdog"));
+        auto common = new formatting {posdata(20, EARLY, true), posdata(20, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "{0}", 64, true, 0};
+        auto front = new formatting {posdata(20, EARLY, true), posdata(40, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "({1})", 64, true, 1};
+        auto answer = new formatting {posdata(20, EARLY, true), posdata(50, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "Meaning: {2}", 32, true, 2};
+        currentdeck.cards.push_back(new format { std::vector<formatting *> {common, front, answer} });
+        
+        currentnote = 0;
+        
+        for(auto card : currentdeck.cards)
+        {
+            for(auto e : card->formatting)
+            {
+                element * myelement;
+                if(e->format == "")
+                    myelement = new element(e->x, e->y, e->w, e->h, true, false, "<uninitialized>", 0, 0, e->fontsize, {e->r, e->g, e->b}, {128,0,0} );
+                else
+                    myelement = new element(e->x, e->y, e->w, e->h, false, false, "<uninitialized>", 0, 0, e->fontsize, {128,0,0}, {e->r, e->g, e->b} );
+                myelement->textcenter = e->centered;
+                associations.push_back(std::pair<formatting *, element *> { e, myelement });
+            }
+        }
+        
+        refresh(currentnote);
+    }
+    
+    std::string do_format(std::string & format, std::vector<note *> & notes, int index)
+    {
+        std::string formatted = "";
+        
+        const char * text = format.data();
+        const char * start = text;
+        
+        bool capsulated = 0; // 0: false; 1: true
+        bool escaping = false;
+        
+        std::string current;
+        std::string capsule;
+        
+        size_t textlen = strlen(start);
+        while(text - start < textlen)
+        {
+            if(!capsulated and *text == '{' and !escaping)
+            {
+                capsulated = true;
+            }
+            else if(capsulated and *text == '}')
+            {
+                // TODO: use and reset capsule
+                try
+                {
+                    int num = std::stoi(capsule);
+                    if(index < notes.size())
+                    {
+                        if(num < notes[index]->fields.size())
+                            current += notes[index]->fields[num];
+                    }
+                }
+                catch (const std::invalid_argument& e)
+                { } // don't care
+                catch (const std::out_of_range& e)
+                { } // don't care
+                capsule = "";
+                capsulated = false;
+            }
+            else if(*text == '\\' and !escaping)
+            {
+                escaping = true;
+            }
+            else if(*text == '\0')
+            {
+                break;
+            }
+            else if (escaping)
+            {
+                if(*text == '\\') // escaped backslash
+                    current += '\\';
+                else if(*text == '{') // brace escape
+                    current += '{';
+                else // false escape, just a backslash followed by the current character
+                {
+                    current += '\\';
+                    current += *text;
+                }
+                escaping = false;
+            }
+            else if (capsulated)
+            {
+                capsule += *text;
+            }
+            else
+            {
+                current += *text;
+            }
+            
+            text++;
+        }
+        return current;
+    }
+    
+    void refresh(int index)
+    {
+        for(auto p : associations)
+        {
+            auto f = p.first;
+            auto e = p.second;
+            e->text = do_format(f->format, currentdeck.notes, index);
+            e->active = true;
+            if(f->type == 2) e->active = false;
+        }
+    }
+    
+    void flip()
+    {
+        for(auto p : associations)
+        {
+            auto f = p.first;
+            auto e = p.second;
+            e->active = true;
+            if(f->type == 1) e->active = false;
+        }
+    }
+    
+    void next()
+    {
+        currentnote++;
+        if(currentnote >= currentdeck.notes.size()) currentnote = 0;
+        refresh(currentnote);
+    }
+    
+    void insert_into(std::vector<element*> & elements)
+    {
+        for(auto p : associations)
+        {
+            auto e = p.second;
+            elements.push_back(e);
+        }
+    }
+};
 
 int main()
 {
+    std::vector<element*> elements;
+    
     graphics backend;
     
     backend.init();
@@ -673,6 +922,10 @@ int main()
     auto b_good = new element(posdata(50, EARLY, true), posdata(-32, LATE), posdata(50, EARLY, true), posdata(32, EARLY), "good", 24, {0,200,0}, {255,255,255}, GOOD);
     b_good->active = false;
     elements.push_back(b_good);
+    
+    deckui mydeckui;
+    
+    mydeckui.insert_into(elements);
     
     elements.push_back(new element(posdata(-backend.string_width_pixels("つづく", 32)-10, LATE), posdata(-40, LATE), posdata(0, LATE), posdata(32, EARLY), false, false,
         "つづく",
@@ -732,16 +985,19 @@ int main()
                         b_flunk->active = true;
                         b_good->active = true;
                         b_flip->active = false;
+                        mydeckui.flip();
                         break;
                     case FLUNK:
                         b_flunk->active = false;
                         b_good->active = false;
                         b_flip->active = true;
+                        mydeckui.next();
                         break;
                     case GOOD:
                         b_flunk->active = false;
                         b_good->active = false;
                         b_flip->active = true;
+                        mydeckui.next();
                         break;
                     }
                 }
@@ -754,6 +1010,11 @@ int main()
             if(!element) continue;
             if(!element->active) continue;
             float factor = (element==pressedelement)?(0.8):(1.0);
+            bool debugui = false;
+            if(debugui)
+            {
+                backend.rect_outline(backend.surface, 255, 0, 255, element->x1(&backend), element->y1(&backend), element->x2(&backend), element->y2(&backend));
+            }
             if(element->drawbg)
             {
                 if(!element->outline)
