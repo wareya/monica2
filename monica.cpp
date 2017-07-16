@@ -7,7 +7,7 @@
 
 #include <string>
 #include <map>
-#include <unordered_map>
+#include <vector>
 
 #ifdef max
 #undef max
@@ -398,8 +398,6 @@ struct graphics
                         }
                     }
                     
-                    //free(data);
-                    
                     real_x += advancepixels;
                     lastindex = index;
                 }
@@ -417,74 +415,6 @@ struct graphics
     {
         SDL_UpdateWindowSurface(win);
         fill(surface, 0,0,0);
-        //render = false;
-        string(surface, &bitmapcache, surface->w-string_width_pixels("つづく", 32)-10, surface->h-40, "つづく", 255, 255, 255, 32);
-        /*
-        string(surface, 10, 10,
-            "\n"
-            "　1945年、5月1日――ドイツ、ベルリン。\n"
-            "　AM0:27……\n"
-            "\n"
-            "　第二次大戦の最終局面は、空前絶後の総力戦と化していた。\n"
-            "　いや、殲滅戦と言うべきか。\n"
-            "　圧倒的物量差に押し潰され、孤立したベルリンはもはや陥落寸前である。\n"
-            "　帝都を包囲する赤軍50万は徐々にその輪を狭めていき、生きてそこから脱することなどまず不可能と言って構わない。\n"
-            "　悲鳴と銃声と爆音の狂想曲は絶え間なく、かつ容赦なく鳴り響き、街を人を根こそぎ壊し、〈鏖殺〉《おうさつ》していく。\n"
-            "　〈鏖殺〉《みなごろし》――老若男女〈鏖殺〉《みなごろし》。世界の敵を根絶やしに。\n"
-            "\n"
-            "　正義、復讐、愛、平和、制圧、解放、自由、平等――お題目は何でもいい。\n"
-            "　〈依〉《よ》る大義さえ手に入れれば、人はどこまでも残虐になれるという見本のような状況だ。それがいたる所で起きている。\n"
-            "\n"
-            "　そう、たとえば――\n"
-            "\n"
-            "　この場所。\n"
-            "　目も眩むような閃光に次ぎ、轟音と爆炎が炸裂した。\n"
-            "　今の砲撃で新たに数人――少なくとも死体として原型を留めている三人以上が、粉微塵の肉塊となって街路上に散らばっている。\n"
-            "\n"
-            "「――っぁ、クソったれがッ！」\n",
-            255, 255, 255);
-        */
-        string(surface, &bitmapcache, 10, 10,
-            "\n"
-            "私は結果もしこういう落第学という訳の時を教えました。かく事実を影響方ももとよりその撲殺ないななりを散らかすから致しなには留学来ないませて、たったにはなっなかろなけれないた。\n"
-            "\n"
-            "支を払っだ事はいよいよ時間へいよいよたませう。ちょうど久原さんで安心習慣あまり注文を上っです念その連中どこか相違へというご試験だないですませから、その当時はあなたか権力"
-            "態度へ当てるから、嘉納さんのはずに秋刀魚の私にぷんぷんご注文と云っとあなた主義にご関係を考えようにもし実議論を云いだなけれども、ちゃんと無論所有を調っますといるやのをきまっなけれで。\n"
-            "\n"
-            "そうしてしかしご比喩の供する旨もどう曖昧としだて、その文芸をも致さですがという心をして得るですた。そのため傍点の中こういう教師も私中を困るないかと大森さんに上げるたない、性"
-            "質の事実ですとしてご安心ですたたが、主命の中に別で今までの魚籃に九月して出しが、こうのその間を上るてその以上にもうあっだですと認めたものうて、多いますだろがなぜお人着るま"
-            "せものたたな。つまり靄か便宜か所有を解るたて、ほか中火事に掘りからくるん上よりご発展のほかが至っだだ。時間がはどうしても飽いが始めありたいでしょうて、いよいよ余計入れて所有"
-            "もとても多いですのない。ところがご意味にできるとはしまいごとくのなて、知人にも、けっしてそれかさていれますな引き離すられるないましとなれて、説はするがみありでしょ。\n"
-            "\n"
-            "そうしてしかしご比喩の供する旨もどう曖昧としだて、その文芸をも致さですがという心をして得るですた。そのため傍点の中こういう教師も私中を困るないかと大森さんに上げるたない、性"
-            "質の事実ですとしてご安心ですたたが、主命の中に別で今までの魚籃に九月して出しが、こうのその間を上るてその以上にもうあっだですと認めたものうて、多いますだろがなぜお人着るま"
-            "せものたたな。つまり靄か便宜か所有を解るたて、ほか中火事に掘りからくるん上よりご発展のほかが至っだだ。時間がはどうしても飽いが始めありたいでしょうて、いよいよ余計入れて所有"
-            "もとても多いですのない。ところがご意味にできるとはしまいごとくのなて、知人にも、けっしてそれかさていれますな引き離すられるないましとなれて、説はするがみありでしょ。\n"
-            "\n"
-            "至極何しろはいくら方面においてくるたが、あれをは今上なりそれのごらくはえらいしいるんた。私はいくら承諾のもので不推薦は参りてみるですなんだが、一一の程度がしっかり聞えるまいと"
-            "して講演でて、すなわちその傍点の人を返っられて、私かからよその他よりお話しを掴みで行くます事たたと学習するて自失する切らましだ。\n"
-            "\n"
-            "一般にまたは岡田さんへしかしいっそ聴いでものうでです。大森君はとても春を考えが分りんのないましう。（しかしがたのし時たいたましがありもしなますて、）こう進みう模範に、朝日新聞の"
-            "兄かも立ち行かのでやりという、男の安心は今日の所まで済んさものの儲けないて学習ら立ちて得るなって大新うのまし。どこもむしろ一筋が思いませようにするがみるましのだがたとえばそう"
-            "吉利がた出かけでしょない。またあまり一カ所も間際をかけ合わから、その間をまあ見るななとなっが、強くましますてもしくはご推察が接しでた。\n"
-            "\n"
-            "人の今に、その風俗を今が思っじゃ、時分上にちょっと事実幾幾十度が失っなりの書物を、どこか考えべく附随にさまし十月はいよいよいうられのたて、いよいよこう当人からないて、どんな気"
-            "が引張っものに重ませ面白いありでした。すると同時に前二十三人をあるまではなりでという容易ない［＃「に見えると、人をそんな所いわゆる中のなりからしまっうものな。\n"
-            "\n"
-            "とうとうに手数から自分くれた一十年結果に洗わて、ここかするうていあるという事で実際生れなのなと、つい取りつかれのに妙ますて、今に本国からしからできているなけれん。\n"
-            "\n"
-            "人間をいうと握るばどこかなしものがしように過ぎでもいうですでしから、けれども問題は偉くのに突き抜けて、私に先生がよししまいて三本を一人は十杯もけっしてもっけれどもなら"
-            "までですものない。ほかたでか至る自己が解らて、そうした金は高等憂非常ないとしでものますは立ち竦んだない、ない仲の日に云わたその道なかれと云ってしまいたのないべき。し"
-            "たがって私は非常だので述べるだ方ではやかましい、危険なて取次いたらのますと思うて皆の外国の個性にその大勢が承諾見せるてみなけれた。人身がも普通たいやしくもしてい"
-            "れれです今日に同年輩になるや、主義が生れとか、また貧民がしとかし市街が描い落、平穏なで、何しろしゃべっがたまらなく人をやるでとするから、世の中と纏めて中学でも何者"
-            "までで困ら本領は這入りな。\n",
-            255, 255, 255, 32);
-        
-        rect_outline(surface, 0, 0, 0,       0, 0, surface->w-1, surface->h-1);
-        rect_outline(surface, 255, 255, 255, 1, 1, surface->w-2, surface->h-2);
-        rect_outline(surface, 0, 0, 0,       2, 2, surface->w-3, surface->h-3);
-        rect_outline(surface, 255, 255, 255, 3, 3, surface->w-4, surface->h-4);
-        rect_outline(surface, 0, 0, 0,       4, 4, surface->w-5, surface->h-5);
     }
     
     void fill(SDL_Surface * surface, float r, float g, float b)
@@ -501,39 +431,6 @@ struct graphics
         else
             rect(surface, r, g, b, 0, 0, surface->w, surface->h);
         return;
-        #if 0 //USE_SDL_EVERYWHERE
-        SDL_FillRect(surface, NULL, MapRGB(surface->format, r, g, b));
-        #endif
-        #if 0
-        const int bytes = surface->format->BytesPerPixel;
-        uint8_t * const pixels = (uint8_t *)surface->pixels;
-        uint32_t const color = MapRGB(surface->format, r, g, b);
-        if(bytes == 4)
-        {
-            auto total = surface->w*surface->h;
-            std::fill((uint32_t*)pixels, ((uint32_t*)pixels)+total, color);
-            return;
-        }
-        else if(bytes == 3)
-        {
-            auto total = surface->w*surface->h*3;
-            for(uint8_t * pointer = pixels; pointer < pixels + total; pointer += surface->pitch)
-                std::fill((triad*)pointer, (triad*)(pointer+surface->pitch), *(triad*)&color);
-        }
-        else if(bytes == 2)
-        {
-            auto total = surface->w*surface->h*2;
-            for(uint8_t * pointer = pixels; pointer < pixels + total; pointer += surface->pitch)
-                std::fill((uint16_t*)pointer, (uint16_t*)(pointer+surface->pitch), color);
-        }
-        else if(bytes == 1)
-        {
-            auto total = surface->w*surface->h;
-            for(uint8_t * pointer = pixels; pointer < pixels + total; pointer += surface->pitch)
-                memset(pointer, surface->pitch, color);
-                //std::fill(pointer, pointer+surface->pitch, color;
-        }
-        #endif
     }
     
     void rect(SDL_Surface * surface, float r, float g, float b, int ax1, int ay1, int ax2, int ay2)
@@ -608,14 +505,71 @@ enum action {
 
 struct element {
     int x, y, w, h;
-    int textsize;
-    char * text;
-    uint32_t color = 0;
-    int clickAction = 0;
+    bool drawbg, outline;
+    std::string text;
+    int textx, texty, textsize;
+    triad background, foreground;
+    int clickaction = 0;
     bool active = true;
     
     std::map<uint64_t, crap> bitmapcache;
+    
+    element(int x, int y, int w, int h, bool drawbg, bool outline, std::string text, int textx, int texty, int textsize, triad background, triad foreground, int clickaction = 0, bool active = true)
+    {
+        this->x = x;
+        this->y = y;
+        this->w = w;
+        this->h = h;
+        this->drawbg = drawbg;
+        this->outline = outline;
+        this->text = text;
+        this->textx = textx;
+        this->texty = texty;
+        this->textsize = textsize;
+        this->background = background;
+        this->foreground = foreground;
+        this->clickaction = clickaction;
+        this->active = active;
+    }
+    
+    ~element()
+    {
+        for (const auto & pair : bitmapcache)
+        {
+            crap value = pair.second;
+            free(value.data);
+        }
+    }
+    
+    int y1(graphics * backend)
+    {
+        int y1 = y;
+        if(y1 < 0) y1 += backend->surface->h;
+        return y1;
+    }
+    int x1(graphics * backend)
+    {
+        int x1 = x;
+        if(x1 < 0) x1 += backend->surface->w;
+        return x1;
+    }
+    int y2(graphics * backend)
+    {
+        int y2 = h;
+        if(y2 <= 0) y2 += backend->surface->h;
+        else y2 += y1(backend);
+        return y2;
+    }
+    int x2(graphics * backend)
+    {
+        int x2 = w;
+        if(x2 <= 0) x2 += backend->surface->w;
+        else x2 += x1(backend);
+        return x2;
+    }
 };
+
+std::vector<element*> elements;
 
 int main()
 {
@@ -625,6 +579,55 @@ int main()
     
     auto start = SDL_GetTicks();
     float smoothtime = 0;
+    
+    elements.push_back(new element(-backend.string_width_pixels("つづく", 32)-10, -40, 0, 0, false, false,
+        "つづく",
+        0, 0, 32, {0,0,0}, {255,255,255}));
+    
+    elements.push_back(new element(10, 10,-10,-10, true, false,
+        "\n"
+        "私は結果もしこういう落第学という訳の時を教えました。かく事実を影響方ももとよりその撲殺ないななりを散らかすから致しなには留学来ないませて、たったにはなっなかろなけれないた。\n"
+        "\n"
+        "支を払っだ事はいよいよ時間へいよいよたませう。ちょうど久原さんで安心習慣あまり注文を上っです念その連中どこか相違へというご試験だないですませから、その当時はあなたか権力"
+        "態度へ当てるから、嘉納さんのはずに秋刀魚の私にぷんぷんご注文と云っとあなた主義にご関係を考えようにもし実議論を云いだなけれども、ちゃんと無論所有を調っますといるやのをきまっなけれで。\n"
+        "\n"
+        "そうしてしかしご比喩の供する旨もどう曖昧としだて、その文芸をも致さですがという心をして得るですた。そのため傍点の中こういう教師も私中を困るないかと大森さんに上げるたない、性"
+        "質の事実ですとしてご安心ですたたが、主命の中に別で今までの魚籃に九月して出しが、こうのその間を上るてその以上にもうあっだですと認めたものうて、多いますだろがなぜお人着るま"
+        "せものたたな。つまり靄か便宜か所有を解るたて、ほか中火事に掘りからくるん上よりご発展のほかが至っだだ。時間がはどうしても飽いが始めありたいでしょうて、いよいよ余計入れて所有"
+        "もとても多いですのない。ところがご意味にできるとはしまいごとくのなて、知人にも、けっしてそれかさていれますな引き離すられるないましとなれて、説はするがみありでしょ。\n"
+        "\n"
+        "そうしてしかしご比喩の供する旨もどう曖昧としだて、その文芸をも致さですがという心をして得るですた。そのため傍点の中こういう教師も私中を困るないかと大森さんに上げるたない、性"
+        "質の事実ですとしてご安心ですたたが、主命の中に別で今までの魚籃に九月して出しが、こうのその間を上るてその以上にもうあっだですと認めたものうて、多いますだろがなぜお人着るま"
+        "せものたたな。つまり靄か便宜か所有を解るたて、ほか中火事に掘りからくるん上よりご発展のほかが至っだだ。時間がはどうしても飽いが始めありたいでしょうて、いよいよ余計入れて所有"
+        "もとても多いですのない。ところがご意味にできるとはしまいごとくのなて、知人にも、けっしてそれかさていれますな引き離すられるないましとなれて、説はするがみありでしょ。\n"
+        "\n"
+        "至極何しろはいくら方面においてくるたが、あれをは今上なりそれのごらくはえらいしいるんた。私はいくら承諾のもので不推薦は参りてみるですなんだが、一一の程度がしっかり聞えるまいと"
+        "して講演でて、すなわちその傍点の人を返っられて、私かからよその他よりお話しを掴みで行くます事たたと学習するて自失する切らましだ。\n"
+        "\n"
+        "一般にまたは岡田さんへしかしいっそ聴いでものうでです。大森君はとても春を考えが分りんのないましう。（しかしがたのし時たいたましがありもしなますて、）こう進みう模範に、朝日新聞の"
+        "兄かも立ち行かのでやりという、男の安心は今日の所まで済んさものの儲けないて学習ら立ちて得るなって大新うのまし。どこもむしろ一筋が思いませようにするがみるましのだがたとえばそう"
+        "吉利がた出かけでしょない。またあまり一カ所も間際をかけ合わから、その間をまあ見るななとなっが、強くましますてもしくはご推察が接しでた。\n"
+        "\n"
+        "人の今に、その風俗を今が思っじゃ、時分上にちょっと事実幾幾十度が失っなりの書物を、どこか考えべく附随にさまし十月はいよいよいうられのたて、いよいよこう当人からないて、どんな気"
+        "が引張っものに重ませ面白いありでした。すると同時に前二十三人をあるまではなりでという容易ない［＃「に見えると、人をそんな所いわゆる中のなりからしまっうものな。\n"
+        "\n"
+        "とうとうに手数から自分くれた一十年結果に洗わて、ここかするうていあるという事で実際生れなのなと、つい取りつかれのに妙ますて、今に本国からしからできているなけれん。\n"
+        "\n"
+        "人間をいうと握るばどこかなしものがしように過ぎでもいうですでしから、けれども問題は偉くのに突き抜けて、私に先生がよししまいて三本を一人は十杯もけっしてもっけれどもなら"
+        "までですものない。ほかたでか至る自己が解らて、そうした金は高等憂非常ないとしでものますは立ち竦んだない、ない仲の日に云わたその道なかれと云ってしまいたのないべき。し"
+        "たがって私は非常だので述べるだ方ではやかましい、危険なて取次いたらのますと思うて皆の外国の個性にその大勢が承諾見せるてみなけれた。人身がも普通たいやしくもしてい"
+        "れれです今日に同年輩になるや、主義が生れとか、また貧民がしとかし市街が描い落、平穏なで、何しろしゃべっがたまらなく人をやるでとするから、世の中と纏めて中学でも何者"
+        "までで困ら本領は這入りな。\n",    
+        0, 0, 32, {0,128,255}, {255,255,255}));
+    
+    elements.push_back(new element(5, 5, 50, 20, true, false, "test", 5, 5, 16, {32,64,128}, {255,127,127}));
+        
+    elements.push_back(new element(0, 0,-0,-0, true, true, "", 0, 0, 0, {0,0,0}, {0,0,0}));
+    elements.push_back(new element(1, 1,-1,-1, true, true, "", 0, 0, 0, {255,255,255}, {0,0,0}));
+    elements.push_back(new element(2, 2,-2,-2, true, true, "", 0, 0, 0, {0,0,0}, {0,0,0}));
+    elements.push_back(new element(3, 3,-3,-3, true, true, "", 0, 0, 0, {255,255,255}, {0,0,0}));
+    elements.push_back(new element(4, 4,-4,-4, true, true, "", 0, 0, 0, {0,0,0}, {0,0,0}));
+    
     while(1)
     {
         SDL_Event event;
@@ -640,7 +643,21 @@ int main()
             }
         }
         
-        backend.update();
+        for (auto element : elements)
+        {
+            if(!element) continue;
+            if(element->drawbg)
+            {
+                if(!element->outline)
+                    backend.rect(backend.surface, element->background.r, element->background.g, element->background.b, element->x1(&backend), element->y1(&backend), element->x2(&backend), element->y2(&backend));
+                else
+                    backend.rect_outline(backend.surface, element->background.r, element->background.g, element->background.b, element->x1(&backend), element->y1(&backend), element->x2(&backend), element->y2(&backend));
+            }
+            if(element->text != "")
+            {
+                backend.string(backend.surface, &element->bitmapcache, element->x1(&backend), element->y1(&backend), element->text.data(), element->foreground.r, element->foreground.g, element->foreground.b, element->textsize);
+            }
+        }
         
         auto time = SDL_GetTicks();
         //float constant = 0.9999f;
@@ -652,6 +669,8 @@ int main()
         auto s = std::to_string(int(round(1000/smoothtime)))+"fps";
         render = true;
         backend.string(backend.surface, nullptr, backend.surface->w-backend.string_width_pixels(s.data(), 24)-5, 5, s.data(), 255, 255, 255, 24);
+        
+        backend.update();
         
         //SDL_Delay(16);
     }
