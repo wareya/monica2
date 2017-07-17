@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <stdio.h>
+#include <time.h> // Note: monica only supports implementations that return a number of seconds from time().
 
 #include <string>
 #include <map>
@@ -192,7 +193,7 @@ crap bitmap_lookup(stbtt_fontinfo * fontinfo, std::map<uint64_t, crap> * bitmapc
     
     crap data;
     data.data = stbtt_GetGlyphBitmapSubpixel(fontinfo, fontscale, fontscale, subpixel/3.0, 0, index, &data.width, &data.height, &data.xoff, &data.yoff);
-    if(bitmapcache and cache) bitmapcache->insert(std::pair<uint64_t, crap>(key, data));
+    if(bitmapcache and cache) (*bitmapcache)[key] = data;
     return data;
 }
 
@@ -233,7 +234,7 @@ struct graphics
         else
         {
             uint32_t index = stbtt_FindGlyphIndex(&fontinfo, codepoint);
-            if(cache) indexcache.insert(std::pair<uint32_t, uint32_t>(codepoint, index));
+            if(cache) indexcache[codepoint] = index;
             return index;
         }
     }
@@ -423,7 +424,7 @@ struct graphics
                                     uint8_t * const pointer = ((uint8_t *)surface->pixels) + (out_y*surface->pitch + out_x*surface->format->BytesPerPixel);
                                     
                                     uint32_t output;
-                                    memcpy(&output, pointer, surface->format->BytesPerPixel); // fixme: probably wrong on big endian
+                                    memcpy(&output, pointer, surface->format->BytesPerPixel); // FIXME: probably wrong on big endian
                                     
                                     uint8_t r, g, b;
                                     SDL_GetRGB(output, surface->format, &r, &g, &b);
@@ -690,6 +691,7 @@ struct element {
 // a note is a collection of fields, loaded here from a TSV line
 struct note {
     std::vector<std::string> fields;
+    uint64_t unique_id = 0;
     note(std::string line)
     {
         const char * text = line.data();
@@ -765,8 +767,43 @@ struct note {
         }
         if(current != "")
             fields.push_back(current);
+        if(fields.size() > 0)
+        {
+            try
+            {
+                unique_id = std::stoll(fields[0]);
+                fields.erase(fields.begin());
+            }
+            catch (const std::invalid_argument& e)
+            {
+                puts("ERROR: A note has an invalid Unique ID field. This is very bad!");
+            }
+            catch (const std::out_of_range& e)
+            {
+                puts("ERROR: A note has an invalid Unique ID field. This is very bad!");
+            }
+        }
     }
 };
+
+
+//tm one_hour_tm = {0, 0, 1, 1, 0, 0, 1, 0, 0};
+//tm zero_hour_tm = {0, 0, 0, 1, 0, 0, 1, 0, 0};
+//const double seconds_per_time = difftime(mktime(&one_hour_tm), mktime(&zero_hour_tm))/(60.0*60.0);
+const double seconds_per_time = (60.0*60.0)/difftime(60*60, 0);
+
+int days_between(time_t t1, time_t t2)
+{
+    auto local1 = *localtime(&t1);
+    auto local2 = *localtime(&t2);
+    int seconds_into_day_1 = local1.tm_sec + local1.tm_min*60 + local1.tm_hour*60*60;
+    int seconds_into_day_2 = local2.tm_sec + local2.tm_min*60 + local2.tm_hour*60*60;
+    t1 -= seconds_into_day_1/seconds_per_time;
+    t2 -= seconds_into_day_2/seconds_per_time;
+    double diff_seconds = difftime(t2, t1);
+    int between = floor(diff_seconds/60/60/24);
+    return between;
+}
 
 // a formatting element is a virtual version of a UI element
 struct formatting
@@ -791,11 +828,64 @@ struct format
     }
 };
 
+struct scheduling
+{
+    time_t time_added, time_scheduled_from, time_scheduled_for, time_last_seen;
+    int day_interval = 1;
+    int days_repped, times_flunked, times_passed;
+    float ease = 2.5;
+    int learning = 2; // learning step, 2 is first, 1 is second, 0 is graduated
+};
+
+
+time_t add_seconds(time_t start, int seconds)
+{
+    return start+seconds*seconds_per_time;
+}
+void schedule_minutes(time_t now, scheduling * schedule, int minutes)
+{
+    schedule->time_scheduled_from = now;
+    schedule->time_scheduled_for = add_seconds(now, minutes*60);
+    schedule->day_interval = 0;
+}
+void schedule_days(time_t now, scheduling * schedule, int days)
+{
+    schedule->time_scheduled_from = now;
+    schedule->time_scheduled_for = add_seconds(now, days*60*60*24);
+    schedule->day_interval = days;
+}
+
 // a deck is a collection of notes and cards
 struct deck
 {
     std::vector<note *> notes;
+    std::map<uint64_t, scheduling *> scheduler;
     std::vector<format *> cards;
+    void add_note(note * newnote)
+    {
+        if(scheduler.count(newnote->unique_id) > 0)
+            printf("ERROR: Tried to add a note with the Unique ID %lld, when this Unique ID is already present in the deck.", newnote->unique_id);
+        else
+        {
+            auto schedule = new scheduling();
+            schedule->days_repped = 0;
+            schedule->times_flunked = 0;
+            schedule->times_passed = 0;
+            
+            notes.push_back(newnote);
+            scheduler[newnote->unique_id] = schedule;
+        }
+    }
+    void add_note(note * oldnote, scheduling * schedule)
+    {
+        if(scheduler.count(oldnote->unique_id) > 0)
+            printf("Tried to add a note with the Unique ID %lld, when this Unique ID is already present in the deck.", oldnote->unique_id);
+        else
+        {
+            notes.push_back(oldnote);
+            scheduler[oldnote->unique_id] = schedule;
+        }
+    }
 };
 
 // user interface for the deck
@@ -805,12 +895,14 @@ struct deckui
     int currentnote = 0;
     deck currentdeck;
     
+    int new_notes_today = 3;
+    
     deckui()
     {
         // test data, gonna implement deck loading properly later
-        currentdeck.notes.push_back(new note("日本\tにほん\\nにっぽん\t\"japan\t/\tjapan (archaic)\""));
-        currentdeck.notes.push_back(new note("犬\tいぬ\tdog"));
-        currentdeck.notes.push_back(new note("𠂇\t\thand"));
+        currentdeck.add_note(new note("0\t日本\tにほん\\nにっぽん\t\"japan\t/\tjapan (traditional)\""));
+        currentdeck.add_note(new note("1\t犬\tいぬ\tdog"));
+        currentdeck.add_note(new note("2\t𠂇\t\thand"));
         // Modern C++ :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^)
         auto common = new formatting {posdata(20, EARLY, true), posdata(20, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "{0}", 64, true, 0};
         auto front = new formatting {posdata(20, EARLY, true), posdata(40, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "({1})", 64, true, 1};
@@ -911,9 +1003,26 @@ struct deckui
         return current;
     }
     
+    // hides the current card
+    bool stashed = true;
+    void stash()
+    {
+        stashed = true;
+        for(auto p : associations)
+        {
+            auto e = p.second;
+            e->text = "";
+            e->active = false;
+        }
+    }
+    
     // shows the front of the given card
     void refresh(int index)
     {
+        stashed = false;
+        auto note = currentdeck.notes[currentnote];
+        auto schedule = currentdeck.scheduler[note->unique_id];
+        schedule->time_last_seen = time(NULL);
         for(auto p : associations)
         {
             auto f = p.first;
@@ -927,6 +1036,10 @@ struct deckui
     // shows the back of the current card
     void flip()
     {
+        stashed = false;
+        auto note = currentdeck.notes[currentnote];
+        auto schedule = currentdeck.scheduler[note->unique_id];
+        schedule->time_last_seen = time(NULL);
         for(auto p : associations)
         {
             auto f = p.first;
@@ -936,12 +1049,146 @@ struct deckui
         }
     }
     
-    // advances to the next note
-    void next()
+    // answers and reschedules the current note
+    void answer(int rank = 0) // rank - 0: flunk; 1: good; (for now)
     {
-        currentnote++;
-        if(currentnote >= currentdeck.notes.size()) currentnote = 0;
-        refresh(currentnote);
+        if(stashed) return;
+        
+        auto note = currentdeck.notes[currentnote];
+        auto schedule = currentdeck.scheduler[note->unique_id];
+        
+        auto now = time(NULL);
+        
+        if(schedule->days_repped == 0)
+        {
+            schedule->days_repped++;
+            schedule->time_added = now;
+            new_notes_today--;
+        }
+        else if(days_between(now, schedule->time_scheduled_from) != 0)
+            schedule->days_repped++;
+        
+        // learning queue card
+        if(schedule->learning > 0)
+        {
+            // flunk: reset to first learning step
+            if(rank == 0) 
+            {
+                puts("learning flunk");
+                schedule->learning = 2;
+                schedule_minutes(now, schedule, 1);
+            }
+            // pass: depends on learning stage
+            else
+            {
+                schedule->learning--;
+                
+                // wasn't the last learning stage: five minutes
+                if(schedule->learning > 0)
+                {
+                    puts("learning step");
+                    schedule_minutes(now, schedule, 5);
+                }
+                // was the last learning stage: graduated, one day
+                else // graduation
+                {
+                    puts("learning graduation");
+                    schedule_days(now, schedule, 1);
+                }
+            }
+        }
+        // review queue card
+        else
+        {
+            // flunk: reset to learning
+            if(rank == 0)
+            {
+                puts("rep flunk");
+                schedule->learning = 2;
+                schedule_minutes(now, schedule, 1);
+            }
+            // 
+            else
+            {
+                puts("rep pass");
+                schedule_days(now, schedule, schedule->day_interval*schedule->ease);
+            }
+        }
+        
+        schedule->time_last_seen = now;
+        
+        next(now);
+    }
+    
+    // advances to the next note
+    void next(time_t now)
+    {
+        auto cards = available(now);
+        if(cards.size() > 0)
+        {
+            currentnote = cards[0];
+            refresh(currentnote);
+        }
+        else
+            stash();
+    }
+    
+    // find available cards
+    std::vector<int> available(time_t now)
+    {
+        std::vector<int> ret;
+        std::vector<int> learning_cards;
+        for(int i = 0; i < currentdeck.notes.size(); i++)
+        {
+            auto note = currentdeck.notes[i];
+            auto schedule = currentdeck.scheduler[note->unique_id];
+            
+            // for later
+            if(schedule->learning > 0 and schedule->days_repped > 0)
+                learning_cards.push_back(i);
+            // learning card, ready
+            if(schedule->learning > 0 and schedule->days_repped > 0 and now >= schedule->time_scheduled_for)
+            {
+                puts("learning card");
+                ret.push_back(i);
+            }
+            // new card
+            else if(schedule->learning > 0 and schedule->days_repped == 0 and new_notes_today > 0)
+            {
+                puts("new card");
+                ret.push_back(i);
+            }
+            // rep card
+            else if(schedule->learning == 0 and days_between(now, schedule->time_scheduled_for) <= 0)
+            {
+                puts("rep card");
+                printf("scheduled for: %lld\n", schedule->time_scheduled_for);
+                printf("now: %lld\n", now);
+                ret.push_back(i);
+            }
+        }
+        // bring learning cards closer to now by the study ahead limit (FIXME: hardcoded 5 minutes) if we're out of stuff to study
+        if(ret.size() == 0 and learning_cards.size() > 0)
+        {
+            for(auto i : learning_cards)
+            {
+                auto note = currentdeck.notes[i];
+                auto schedule = currentdeck.scheduler[note->unique_id];
+                auto oldtime = schedule->time_scheduled_for;
+                schedule->time_scheduled_for = add_seconds(now, -5*60);
+                // if we caused integer underflow (technically possible by standard C) set the scheduled_for time to 0 instead
+                if(oldtime < schedule->time_scheduled_for) schedule->time_scheduled_for = 0;
+                
+                // finally, queue up available cards
+                if(now >= schedule->time_scheduled_for)
+                {
+                    puts("unprepared card");
+                    ret.push_back(i);
+                }
+                
+            }
+        }
+        return ret;
     }
     
     // informs the UI about our UI elements
@@ -997,7 +1244,7 @@ int main()
         static element * pressedelement = nullptr;
         while (SDL_PollEvent(&event))
         {
-            // Long term todo: hook in database saving stuff
+            // TODO: hook in database saving stuff
             if (event.type == SDL_QUIT)
                 exit(0);
             
@@ -1042,7 +1289,6 @@ int main()
                 }
                 if(foundelement == pressedelement and foundelement != nullptr)
                 {
-                    // TODO: Make FLUNK and GOOD have their own deckui methods.
                     switch(foundelement->clickaction)
                     {
                     case FLIP:
@@ -1055,14 +1301,20 @@ int main()
                         b_flunk->active = false;
                         b_good->active = false;
                         b_flip->active = true;
-                        mydeckui.next();
+                        mydeckui.answer(0);
                         break;
                     case GOOD:
                         b_flunk->active = false;
                         b_good->active = false;
                         b_flip->active = true;
-                        mydeckui.next();
+                        mydeckui.answer(1);
                         break;
+                    }
+                    if(mydeckui.stashed)
+                    {
+                        b_flunk->active = false;
+                        b_good->active = false;
+                        b_flip->active = false;
                     }
                 }
                 pressedelement = nullptr;
