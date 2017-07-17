@@ -9,6 +9,7 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <algorithm>
 
 #ifdef max
 #undef max
@@ -786,10 +787,7 @@ struct note {
     }
 };
 
-
-//tm one_hour_tm = {0, 0, 1, 1, 0, 0, 1, 0, 0};
-//tm zero_hour_tm = {0, 0, 0, 1, 0, 0, 1, 0, 0};
-//const double seconds_per_time = difftime(mktime(&one_hour_tm), mktime(&zero_hour_tm))/(60.0*60.0);
+// FIXME: might be backwards (1/x)
 const double seconds_per_time = (60.0*60.0)/difftime(60*60, 0);
 
 int days_between(time_t t1, time_t t2)
@@ -819,6 +817,7 @@ struct formatting
 // a card is just a list of formatting elements
 struct format
 {
+    uint64_t unique_id = 0;
     std::vector<formatting *> formatting;
     ~format()
     {
@@ -835,6 +834,13 @@ struct scheduling
     int days_repped, times_flunked, times_passed;
     float ease = 2.5;
     int learning = 2; // learning step, 2 is first, 1 is second, 0 is graduated
+};
+
+struct card
+{
+    note * n = nullptr;
+    format * f = nullptr;
+    scheduling * s = nullptr;
 };
 
 
@@ -858,33 +864,48 @@ void schedule_days(time_t now, scheduling * schedule, int days)
 // a deck is a collection of notes and cards
 struct deck
 {
+    // TODO: Change to maps?
     std::vector<note *> notes;
-    std::map<uint64_t, scheduling *> scheduler;
-    std::vector<format *> cards;
-    void add_note(note * newnote)
+    std::vector<format *> formats;
+    std::vector<card *> cards;
+    void add_note(note * n)
     {
-        if(scheduler.count(newnote->unique_id) > 0)
-            printf("ERROR: Tried to add a note with the Unique ID %lld, when this Unique ID is already present in the deck.", newnote->unique_id);
-        else
+        for(auto f : formats)
         {
+            notes.push_back(n);
+            
+            auto c = make_card(n->unique_id, f->unique_id);
+            
             auto schedule = new scheduling();
             schedule->days_repped = 0;
             schedule->times_flunked = 0;
             schedule->times_passed = 0;
+            c->s = schedule;
             
-            notes.push_back(newnote);
-            scheduler[newnote->unique_id] = schedule;
+            cards.push_back(c);
         }
     }
-    void add_note(note * oldnote, scheduling * schedule)
+    void add_note(note * n, scheduling * schedule)
     {
-        if(scheduler.count(oldnote->unique_id) > 0)
-            printf("Tried to add a note with the Unique ID %lld, when this Unique ID is already present in the deck.", oldnote->unique_id);
-        else
+        for(auto f : formats)
         {
-            notes.push_back(oldnote);
-            scheduler[oldnote->unique_id] = schedule;
+            notes.push_back(n);
+            auto c = make_card(n->unique_id, f->unique_id);
+            c->s = schedule;
+            cards.push_back(c);
         }
+    }
+    card * make_card(uint64_t note_id, uint64_t format_id)
+    {
+        card * c = new card;
+        for(auto note : notes)
+            if(note->unique_id == note_id) c->n = note;
+        for(auto format : formats)
+            if(format->unique_id == format_id) c->f = format;
+        if(c->n != nullptr and c->f != nullptr)
+            return c;
+        else
+            return nullptr;
     }
 };
 
@@ -892,29 +913,28 @@ struct deck
 struct deckui
 {
     std::vector<std::pair<formatting *, element *>> associations;
-    int currentnote = 0;
+    card * currentcard;
     deck currentdeck;
     
     int new_notes_today = 3;
     
     deckui()
     {
+        // Modern C++ :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^)
+        auto common = new formatting {posdata(20, EARLY, true), posdata(20, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "{0}", 64, true, 0};
+        auto front  = new formatting {posdata(20, EARLY, true), posdata(40, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "({1})", 64, true, 1};
+        auto answer = new formatting {posdata(20, EARLY, true), posdata(50, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "Meaning: {2}", 32, true, 2};
+        currentdeck.formats.push_back(new format { 1, std::vector<formatting *> {common, front, answer} });
+        
         // test data, gonna implement deck loading properly later
         currentdeck.add_note(new note("0\t日本\tにほん\\nにっぽん\t\"japan\t/\tjapan (traditional)\""));
         currentdeck.add_note(new note("1\t犬\tいぬ\tdog"));
         currentdeck.add_note(new note("2\t𠂇\t\thand"));
-        // Modern C++ :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^)
-        auto common = new formatting {posdata(20, EARLY, true), posdata(20, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "{0}", 64, true, 0};
-        auto front = new formatting {posdata(20, EARLY, true), posdata(40, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "({1})", 64, true, 1};
-        auto answer = new formatting {posdata(20, EARLY, true), posdata(50, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "Meaning: {2}", 32, true, 2};
-        currentdeck.cards.push_back(new format { std::vector<formatting *> {common, front, answer} });
-        
-        currentnote = 0;
         
         // make UI elements for all of the formatting elements in our card definition
-        for(auto card : currentdeck.cards)
+        for(auto format : currentdeck.formats)
         {
-            for(auto e : card->formatting)
+            for(auto e : format->formatting)
             {
                 element * myelement;
                 if(e->format == "")
@@ -926,12 +946,38 @@ struct deckui
             }
         }
         
-        refresh(currentnote);
+        auto cardlist = available(time(NULL));
+        if(cardlist.size() > 0)
+        {
+            puts("setting up initial card");
+            cardsort(cardlist);
+            currentcard = cardlist[0];
+            refresh(currentcard);
+        }
+        else
+        {
+            puts("no available cards to set up");
+            currentcard = nullptr;
+        }
+    }
+    
+    void cardsort(std::vector<card *> & cardlist)
+    {
+        std::sort(cardlist.begin(), cardlist.end(), [this](card * a, card * b)
+        {
+            if(a == nullptr and b == nullptr) return false;
+            if(b == nullptr) return false;
+            if(a == nullptr) return true;
+            if(a->f->unique_id != b->f->unique_id) return (a->f->unique_id < b->f->unique_id);
+            if(a->n->unique_id != b->n->unique_id) return (a->n->unique_id < b->n->unique_id);
+            return a->s->time_last_seen < b->s->time_last_seen;
+        });
     }
     
     // takes a card formatting string and formats in a note
-    std::string do_format(std::string & format, std::vector<note *> & notes, int index)
+    std::string do_format(std::string & format, card * c)
     {
+        puts("doing formatting");
         std::string formatted = "";
         
         const char * text = format.data();
@@ -955,11 +1001,7 @@ struct deckui
                 try
                 {
                     int num = std::stoi(capsule);
-                    if(index < notes.size())
-                    {
-                        if(num < notes[index]->fields.size())
-                            current += notes[index]->fields[num];
-                    }
+                    current += c->n->fields[num];
                 }
                 catch (const std::invalid_argument& e)
                 { } // don't care
@@ -1017,17 +1059,25 @@ struct deckui
     }
     
     // shows the front of the given card
-    void refresh(int index)
+    void refresh(card * c)
     {
+        currentcard = c;
+        
+        if(currentcard == nullptr)
+        {
+            puts("Refreshed card is nullptr");
+            return;
+        }
+        
         stashed = false;
-        auto note = currentdeck.notes[currentnote];
-        auto schedule = currentdeck.scheduler[note->unique_id];
-        schedule->time_last_seen = time(NULL);
+        
+        currentcard->s->time_last_seen = time(NULL);
         for(auto p : associations)
         {
+            puts("doing formatting");
             auto f = p.first;
             auto e = p.second;
-            e->text = do_format(f->format, currentdeck.notes, index);
+            e->text = do_format(f->format, currentcard);
             e->active = true;
             if(f->type == 2) e->active = false;
         }
@@ -1036,10 +1086,11 @@ struct deckui
     // shows the back of the current card
     void flip()
     {
+        if(currentcard == nullptr) return;
+        
         stashed = false;
-        auto note = currentdeck.notes[currentnote];
-        auto schedule = currentdeck.scheduler[note->unique_id];
-        schedule->time_last_seen = time(NULL);
+        
+        currentcard->s->time_last_seen = time(NULL);
         for(auto p : associations)
         {
             auto f = p.first;
@@ -1054,8 +1105,9 @@ struct deckui
     {
         if(stashed) return;
         
-        auto note = currentdeck.notes[currentnote];
-        auto schedule = currentdeck.scheduler[note->unique_id];
+        if(currentcard == nullptr) return;
+        
+        auto schedule = currentcard->s;
         
         auto now = time(NULL);
         
@@ -1068,6 +1120,9 @@ struct deckui
         else if(days_between(now, schedule->time_scheduled_from) != 0)
             schedule->days_repped++;
         
+        // TODO:
+        // 1: Handle flunks gracefully, with a one- or two- day testing followup.
+        // 2: Automatically bury cards that relapse too many times (5? 8?)
         // learning queue card
         if(schedule->learning > 0)
         {
@@ -1105,12 +1160,14 @@ struct deckui
             {
                 puts("rep flunk");
                 schedule->learning = 2;
+                schedule->times_flunked++;
                 schedule_minutes(now, schedule, 1);
             }
             // 
             else
             {
                 puts("rep pass");
+                schedule->times_passed++;
                 schedule_days(now, schedule, schedule->day_interval*schedule->ease);
             }
         }
@@ -1123,40 +1180,42 @@ struct deckui
     // advances to the next note
     void next(time_t now)
     {
-        auto cards = available(now);
-        if(cards.size() > 0)
+        auto cardlist = available(now);
+        cardsort(cardlist);
+        if(cardlist.size() > 0)
         {
-            currentnote = cards[0];
-            refresh(currentnote);
+            currentcard = cardlist[0];
+            refresh(currentcard);
         }
         else
             stash();
     }
     
     // find available cards
-    std::vector<int> available(time_t now)
+    std::vector<card *> available(time_t now)
     {
-        std::vector<int> ret;
-        std::vector<int> learning_cards;
-        for(int i = 0; i < currentdeck.notes.size(); i++)
+        std::vector<card *> ret;
+        std::vector<card *> learning_cards;
+        puts("making list of available cards");
+        for(auto card : currentdeck.cards)
         {
-            auto note = currentdeck.notes[i];
-            auto schedule = currentdeck.scheduler[note->unique_id];
+            puts("checking card for availability");
+            auto schedule = card->s;
             
             // for later
             if(schedule->learning > 0 and schedule->days_repped > 0)
-                learning_cards.push_back(i);
+                learning_cards.push_back(card);
             // learning card, ready
             if(schedule->learning > 0 and schedule->days_repped > 0 and now >= schedule->time_scheduled_for)
             {
                 puts("learning card");
-                ret.push_back(i);
+                ret.push_back(card);
             }
             // new card
             else if(schedule->learning > 0 and schedule->days_repped == 0 and new_notes_today > 0)
             {
                 puts("new card");
-                ret.push_back(i);
+                ret.push_back(card);
             }
             // rep card
             else if(schedule->learning == 0 and days_between(now, schedule->time_scheduled_for) <= 0)
@@ -1164,16 +1223,15 @@ struct deckui
                 puts("rep card");
                 printf("scheduled for: %lld\n", schedule->time_scheduled_for);
                 printf("now: %lld\n", now);
-                ret.push_back(i);
+                ret.push_back(card);
             }
         }
         // bring learning cards closer to now by the study ahead limit (FIXME: hardcoded 5 minutes) if we're out of stuff to study
         if(ret.size() == 0 and learning_cards.size() > 0)
         {
-            for(auto i : learning_cards)
+            for(auto card : learning_cards)
             {
-                auto note = currentdeck.notes[i];
-                auto schedule = currentdeck.scheduler[note->unique_id];
+                auto schedule = card->s;
                 auto oldtime = schedule->time_scheduled_for;
                 schedule->time_scheduled_for = add_seconds(now, -5*60);
                 // if we caused integer underflow (technically possible by standard C) set the scheduled_for time to 0 instead
@@ -1183,7 +1241,7 @@ struct deckui
                 if(now >= schedule->time_scheduled_for)
                 {
                     puts("unprepared card");
-                    ret.push_back(i);
+                    ret.push_back(card);
                 }
                 
             }
