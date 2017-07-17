@@ -831,6 +831,7 @@ struct scheduling
 {
     time_t time_added, time_scheduled_from, time_scheduled_for, time_last_seen;
     int day_interval = 1;
+    int last_good_day_interval = 1;
     int days_repped, times_flunked, times_passed;
     float ease = 2.5;
     int learning = 2; // learning step, 2 is first, 1 is second, 0 is graduated
@@ -968,8 +969,13 @@ struct deckui
             if(a == nullptr and b == nullptr) return false;
             if(b == nullptr) return false;
             if(a == nullptr) return true;
-            if(a->f->unique_id != b->f->unique_id) return (a->f->unique_id < b->f->unique_id);
+            // highest priority different is note ID difference
             if(a->n->unique_id != b->n->unique_id) return (a->n->unique_id < b->n->unique_id);
+            // second is format ID difference
+            if(a->f->unique_id != b->f->unique_id) return (a->f->unique_id < b->f->unique_id);
+            // you should never have multiple card with both the same format and note id
+            // but supposing a bit flips somewhere, the different should be based on time instead of crashing the program
+            // this is only for runtime; when loading the db, one of the cards will be ignored
             return a->s->time_last_seen < b->s->time_last_seen;
         });
     }
@@ -1101,6 +1107,7 @@ struct deckui
     }
     
     // answers and reschedules the current note
+    // TODO: add virtual time adjustment for debugging and to tolerate sleep cycle disorders or disruptions
     void answer(int rank = 0) // rank - 0: flunk; 1: good; (for now)
     {
         if(stashed) return;
@@ -1123,7 +1130,6 @@ struct deckui
         // TODO:
         // 1: Handle flunks gracefully, with a one- or two- day testing followup.
         // 2: Automatically bury cards that relapse too many times (5? 8?)
-        // learning queue card
         if(schedule->learning > 0)
         {
             // flunk: reset to first learning step
@@ -1155,20 +1161,44 @@ struct deckui
         // review queue card
         else
         {
-            // flunk: reset to learning
-            if(rank == 0)
+            // if this is a followup review
+            if(schedule->day_interval < schedule->last_good_day_interval)
             {
-                puts("rep flunk");
-                schedule->learning = 2;
-                schedule->times_flunked++;
-                schedule_minutes(now, schedule, 1);
+                if(rank == 0)
+                {
+                    puts("followup flunk");
+                    schedule->learning = 2;
+                    schedule->times_flunked++;
+                    schedule->last_good_day_interval = 1; // no longer a followup card
+                    schedule_minutes(now, schedule, 1);
+                }
+                // 
+                else
+                {
+                    puts("followup pass");
+                    schedule->times_passed++;
+                    schedule_days(now, schedule, schedule->last_good_day_interval); // reset to last recent good interval instead of using a low interval
+                }
             }
-            // 
+            // if this is a normal review
             else
             {
-                puts("rep pass");
-                schedule->times_passed++;
-                schedule_days(now, schedule, schedule->day_interval*schedule->ease);
+                if(rank == 0)
+                {
+                    puts("rep flunk");
+                    schedule->learning = 2;
+                    schedule->times_flunked++;
+                    // last_good_day_interval is whatever the *previous* interval was
+                    // e.g. if this was a 2.5 ease 25 day interval we failed, the last good interval will be 10 days
+                    schedule_minutes(now, schedule, 1);
+                }
+                else
+                {
+                    puts("rep pass");
+                    schedule->times_passed++;
+                    schedule->last_good_day_interval = schedule->day_interval;
+                    schedule_days(now, schedule, schedule->day_interval*schedule->ease);
+                }
             }
         }
         
