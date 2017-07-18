@@ -863,6 +863,13 @@ time_t add_days(time_t start, int days)
     return add_hours(start, days*24);
 }
 
+// Get current time, plus whatever the offset is (not hooked into anything right now)
+int offset_hours = 0;
+time_t time()
+{
+    return add_hours(time(NULL), offset_hours);
+}
+
 void schedule_minutes(time_t now, scheduling * schedule, int minutes)
 {
     schedule->time_scheduled_from = now;
@@ -967,7 +974,7 @@ struct deckui
             }
         }
         
-        auto cardlist = available(time(NULL));
+        auto cardlist = available(time());
         if(cardlist.size() > 0)
         {
             puts("setting up initial card");
@@ -1096,7 +1103,7 @@ struct deckui
         
         stashed = false;
         
-        currentcard->s->time_last_seen = time(NULL);
+        currentcard->s->time_last_seen = time();
         for(auto p : associations)
         {
             puts("doing formatting");
@@ -1115,7 +1122,7 @@ struct deckui
         
         stashed = false;
         
-        currentcard->s->time_last_seen = time(NULL);
+        currentcard->s->time_last_seen = time();
         for(auto p : associations)
         {
             auto f = p.first;
@@ -1135,7 +1142,7 @@ struct deckui
         
         auto schedule = currentcard->s;
         
-        auto now = time(NULL);
+        auto now = time();
         
         if(schedule->days_repped == 0)
         {
@@ -1146,8 +1153,6 @@ struct deckui
         else if(days_between(now, schedule->time_scheduled_from) != 0)
             schedule->days_repped++;
         
-        // TODO:
-        // 1: Automatically bury cards that relapse too many times (5? 8?)
         if(schedule->learning > 0)
         {
             // flunk: reset to first learning step
