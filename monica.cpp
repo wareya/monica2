@@ -1031,6 +1031,7 @@ version1 # version header in case I ever want to change the scheduling format
 
 void load_notes(deck * mydeck)
 {
+    puts("loading note");
     std::ifstream file("notes.txt");
     std::string str;
     while (std::getline(file, str))
@@ -1038,7 +1039,6 @@ void load_notes(deck * mydeck)
 }
 posdata posdata_from_string(std::string str)
 {
-    puts("Trying to format position data");
     std::vector<std::string> matches;
     std::string match = "";
     for(auto ch : str)
@@ -1099,13 +1099,11 @@ void load_format(deck * mydeck)
             for(auto ch : str) if(ch != ' ') blank = false;
             if(blank)
             {
-                puts("blank line, breaking 1");
                 break;
             }
             
             if(str.back() != ':')
             {
-                puts("not a name, continuing 1");
                 continue;
             }
             std::string id_s = "";
@@ -1131,13 +1129,11 @@ void load_format(deck * mydeck)
                 for(auto ch : str) if(ch != ' ' and ch != '\n') blank = false;
                 if(blank)
                 {
-                    puts("blank line, breaking 2");
                     break;
                 }
                 
                 if(str.back() != ':')
                 {
-                    puts("not a name, continuing 2");
                     continue;
                 }
                 std::string name = "";
@@ -1160,9 +1156,6 @@ void load_format(deck * mydeck)
                 else if(name == "answer")
                     type = 2;
                 
-                puts("name: -----");
-                puts(name.data());
-                
                 std::vector<std::string> values;
                 while (std::getline(file, str))
                 {
@@ -1171,7 +1164,6 @@ void load_format(deck * mydeck)
                     for(auto ch : str) if(ch != ' ' and ch != '\n') blank = false;
                     if(blank)
                     {
-                        puts("breaking out of blank line 3");
                         break;
                     }
                     
@@ -1187,8 +1179,6 @@ void load_format(deck * mydeck)
                     }
                     
                     values.push_back(value);
-                    puts("Adding value");
-                    puts(value.data());
                 }
                 if(values.size() != 10)
                     puts("Wrong number of values in a format element, ignoring format element.");
@@ -1209,13 +1199,9 @@ void load_format(deck * mydeck)
                             type
                         };
                     formatting_group->formatting.push_back(formatelement);
-                    puts("loaded a format piece");
-                    printf("format string: %s\n", values[7].data());
-                    printf("size: %s\n", values[8].data());
                 }
             }
             mydeck->formats[id] = formatting_group;
-            puts("inserted a format group");
         }
     }
     catch (const std::invalid_argument& e)
@@ -1235,6 +1221,7 @@ void load_format(deck * mydeck)
 // Deserialize scheduling state
 void deserialize(deck * mydeck)
 {
+    puts("loading scheduling");
     // read the current scheduling state in from disk
     std::ifstream file("cards.txt");
     std::string str;
@@ -1349,6 +1336,7 @@ void serialize(deck * mydeck)
         );
     }
     fclose(f);
+    puts("saved schedule");
 }
 
 // user interface for the deck
@@ -1367,19 +1355,7 @@ struct deckui
     
     deckui()
     {
-        /*
-        // Modern C++ :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^)
-        auto common = new formatting {posdata(20, EARLY, true), posdata(20, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "{0}", 64, true, 0};
-        auto front  = new formatting {posdata(20, EARLY, true), posdata(40, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "({1})", 64, true, 1};
-        auto answer = new formatting {posdata(20, EARLY, true), posdata(50, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "Meaning: {2}", 32, true, 2};
-        currentdeck.formats[1] = new format { 1, std::vector<formatting *> {common, front, answer} };
-        */
         load_format(&currentdeck);
-        /*
-        currentdeck.add_note(new note("0\t日本\tにほん\\nにっぽん\t\"japan\t/\tjapan (traditional)\""));
-        currentdeck.add_note(new note("1\t犬\tいぬ\tdog"));
-        currentdeck.add_note(new note("2\t𠂇\t\thand"));
-        */
         load_notes(&currentdeck);
         
         deserialize(&currentdeck);
