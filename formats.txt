@@ -1,0 +1,36 @@
+0:
+ common:
+  20 EARLY true
+  20 EARLY true
+  60 EARLY true
+  20 EARLY true
+  255
+  255
+  255
+  {0}
+  64
+  true
+ 
+ front:
+  20 EARLY true
+  40 EARLY true
+  60 EARLY true
+  20 EARLY true
+  255
+  255
+  255
+  ({1})
+  64
+  true
+
+ answer:
+  20 EARLY true
+  40 EARLY true
+  60 EARLY true
+  20 EARLY true
+  255
+  255
+  255
+  Meaning:\n{2}
+  32
+  true

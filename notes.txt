@@ -1,0 +1,3 @@
+0	日本	にほん\nにっぽん	"japan	/	japan (traditional)"
+1	犬	いぬ	dog
+2	𠂇		hand
