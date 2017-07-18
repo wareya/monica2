@@ -1,6 +1,14 @@
 # Monica srs
 
-Monica is a spaced repetition flashcard program inspired by Anki. Monica implements a modified version of Anki's modified SM2 spacing algorithm. Monica only gives 2 choices for answering cards. Answering cards late doesn't change anything, the new interval is based on the intended interval. Ease is never modified. The first failure on a review card puts it into "followup" mode, which means that the last successfully answered interval will be recovered if you do not get it wrong the next time it comes up for reviwe outside of the learning queue. The learning queue does not leave "learning ahead" mode when you lapse a learning queue card (technically, entering the "learning ahead" mode brings every learning queue card's interval closer to now until one is available). Finally, not SRS related, cards are automatically buried if they relapse from the first learning step 8 times in a single day.
+Monica is a spaced repetition flashcard program inspired by Anki.
+
+Monica implements a modified version of Anki's modified SM2 spacing algorithm.
+
+Monica only gives 2 choices for answering cards. Answering cards late doesn't change anything, the new interval is based on the intended interval. Ease is never modified. 
+
+The first failure on a review card puts it into "followup" mode, which means that the last successfully answered interval will be recovered if you do not get it wrong the next time it comes up for reviwe outside of the learning queue. The learning queue does not leave "learning ahead" mode when you lapse a learning queue card (technically, entering the "learning ahead" mode brings every learning queue card's interval closer to now until one is available).
+
+Finally, not SRS related, cards are automatically buried if they relapse from the first learning step 8 times in a single day.
 
 Monica is prealpha software. **Please do not use monica for academic studies (e.g. medicine), it might be unstable and might get abandoned.**
 
