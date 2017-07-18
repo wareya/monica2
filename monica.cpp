@@ -957,8 +957,9 @@ File format:
 # are comments only in this description. The format itself does not suport comments.
 
 Format: (monica never overwrites ever, must be created by hand or generated externally)
-Indentation is meaningful here.
+Indentation is not meaningful.
 ----
+# colons are object beginnings
 0: # Unique ID
  common: # type
   20 EARLY true # x position, EARLY = from start of screen, true = percentage of screen width, false = pixels
@@ -971,7 +972,8 @@ Indentation is meaningful here.
   {0} # field text (runs till newline), note the lack of space before the comment
   64 # text pixel size
   true # is text instead of just a colored background element
- front:
+ 
+ front: # blank or whitespace-only lines are object endings
   20 EARLY true
   40 EARLY true
   60 EARLY true
@@ -982,6 +984,7 @@ Indentation is meaningful here.
   ({1})
   64
   true
+ 
  answer:
   20 EARLY true
   40 EARLY true
@@ -1025,6 +1028,209 @@ version1 # version header in case I ever want to change the scheduling format
 */
 
 // TODO: Support multiple decks via folders
+
+void load_notes(deck * mydeck)
+{
+    std::ifstream file("notes.txt");
+    std::string str;
+    while (std::getline(file, str))
+        mydeck->add_note(new note(str));
+}
+posdata posdata_from_string(std::string str)
+{
+    puts("Trying to format position data");
+    std::vector<std::string> matches;
+    std::string match = "";
+    for(auto ch : str)
+    {
+        if(ch != ' ')
+            match += ch;
+        else if(match != "")
+        {
+            matches.push_back(match);
+            match = "";
+        }
+    }
+    if(match != "")
+        matches.push_back(match);
+    if(matches.size() == 0)
+    {
+        return posdata(0);
+    }
+    else if(matches.size() == 1)
+    {
+        return posdata(std::stoi(matches[0].data()));
+    }
+    else
+    {
+        reference ref = EARLY;
+        if(matches.size() >= 2) // guaranteed to be true, but for code cleanliness reasons
+        {
+            if(matches[1] == "EARLY")
+                ref = EARLY;
+            else if(matches[1] == "CENTER")
+                ref = CENTER;
+            else if(matches[1] == "LATE")
+                ref = LATE;
+        }
+        bool proportional = false;
+        if(matches.size() >= 3)
+        {
+            if(matches[2] == "true")
+                proportional = true;
+            else if(matches[2] == "false")
+                proportional = false;
+        }
+        return posdata(std::stoi(matches[0].data()), ref, proportional);
+    }
+}
+void load_format(deck * mydeck)
+{
+    puts("loading formats");
+    std::ifstream file("formats.txt");
+    std::string last_string = "";
+    try
+    {
+        std::string str;
+        while (std::getline(file, str))
+        {
+            last_string = str;
+            bool blank = true;
+            for(auto ch : str) if(ch != ' ') blank = false;
+            if(blank)
+            {
+                puts("blank line, breaking 1");
+                break;
+            }
+            
+            if(str.back() != ':')
+            {
+                puts("not a name, continuing 1");
+                continue;
+            }
+            std::string id_s = "";
+            bool leadingspace = true;
+            for(auto ch : str)
+            {
+                if(leadingspace and ch == ' ')
+                    continue;
+                else
+                    leadingspace = false;
+                if(ch != ':')
+                    id_s += ch;
+            }
+            
+            uint64_t id = std::stoull(id_s);
+            
+            auto formatting_group = new format;
+            formatting_group->unique_id = id;
+            while (std::getline(file, str))
+            {
+                last_string = str;
+                bool blank = true;
+                for(auto ch : str) if(ch != ' ' and ch != '\n') blank = false;
+                if(blank)
+                {
+                    puts("blank line, breaking 2");
+                    break;
+                }
+                
+                if(str.back() != ':')
+                {
+                    puts("not a name, continuing 2");
+                    continue;
+                }
+                std::string name = "";
+                bool leadingspace = true;
+                for(auto ch : str)
+                {
+                    if(leadingspace and ch == ' ')
+                        continue;
+                    else
+                        leadingspace = false;
+                    if(ch != ':')
+                        name += ch;
+                }
+                
+                int type = -1;
+                if(name == "common")
+                    type = 0;
+                else if(name == "front")
+                    type = 1;
+                else if(name == "answer")
+                    type = 2;
+                
+                puts("name: -----");
+                puts(name.data());
+                
+                std::vector<std::string> values;
+                while (std::getline(file, str))
+                {
+                    last_string = str;
+                    bool blank = true;
+                    for(auto ch : str) if(ch != ' ' and ch != '\n') blank = false;
+                    if(blank)
+                    {
+                        puts("breaking out of blank line 3");
+                        break;
+                    }
+                    
+                    std::string value = "";
+                    bool leadingspace = true;
+                    for(auto ch : str)
+                    {
+                        if(leadingspace and ch == ' ')
+                            continue;
+                        else
+                            leadingspace = false;
+                        value += ch;
+                    }
+                    
+                    values.push_back(value);
+                    puts("Adding value");
+                    puts(value.data());
+                }
+                if(values.size() != 10)
+                    puts("Wrong number of values in a format element, ignoring format element.");
+                else
+                {
+                    auto formatelement =
+                        new formatting {
+                            posdata_from_string(values[0]),
+                            posdata_from_string(values[1]),
+                            posdata_from_string(values[2]),
+                            posdata_from_string(values[3]),
+                            (uint8_t)std::stoi(values[4]), // r
+                            (uint8_t)std::stoi(values[5]), // g
+                            (uint8_t)std::stoi(values[6]), // b
+                            values[7], // format string
+                            std::stoi(values[8]), // text size
+                            ((values[9] == "true") ? (true) : (false)), // centered
+                            type
+                        };
+                    formatting_group->formatting.push_back(formatelement);
+                    puts("loaded a format piece");
+                    printf("format string: %s\n", values[7].data());
+                    printf("size: %s\n", values[8].data());
+                }
+            }
+            mydeck->formats[id] = formatting_group;
+            puts("inserted a format group");
+        }
+    }
+    catch (const std::invalid_argument& e)
+    {
+        puts("ERROR: Number formatting problem in deck format. Exiting.");
+        printf("Last string: '%s'\n", last_string.data());
+        exit(0);
+    }
+    catch (const std::out_of_range& e)
+    {
+        puts("ERROR: Number size problem in deck format. Exiting.");
+        printf("Last string: '%s'\n", last_string.data());
+        exit(0);
+    }
+}
 
 // Deserialize scheduling state
 void deserialize(deck * mydeck)
@@ -1073,8 +1279,8 @@ void deserialize(deck * mydeck)
                 try
                 {
                     int i = 0;
-                    auto nid = std::stoll(matches[i++]);
-                    auto fid = std::stoll(matches[i++]);
+                    auto nid = std::stoull(matches[i++]);
+                    auto fid = std::stoull(matches[i++]);
                     
                     auto c = mydeck->try_insert_new_card(nid, fid);
                     if(!c)
@@ -1161,16 +1367,20 @@ struct deckui
     
     deckui()
     {
+        /*
         // Modern C++ :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^) :^)
         auto common = new formatting {posdata(20, EARLY, true), posdata(20, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "{0}", 64, true, 0};
         auto front  = new formatting {posdata(20, EARLY, true), posdata(40, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "({1})", 64, true, 1};
         auto answer = new formatting {posdata(20, EARLY, true), posdata(50, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true), 255, 255, 255, "Meaning: {2}", 32, true, 2};
         currentdeck.formats[1] = new format { 1, std::vector<formatting *> {common, front, answer} };
-        
-        // test data, gonna implement deck loading properly later
+        */
+        load_format(&currentdeck);
+        /*
         currentdeck.add_note(new note("0\t日本\tにほん\\nにっぽん\t\"japan\t/\tjapan (traditional)\""));
         currentdeck.add_note(new note("1\t犬\tいぬ\tdog"));
         currentdeck.add_note(new note("2\t𠂇\t\thand"));
+        */
+        load_notes(&currentdeck);
         
         deserialize(&currentdeck);
         currentdeck.add_missing_cards();
