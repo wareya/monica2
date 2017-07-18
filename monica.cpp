@@ -1003,7 +1003,6 @@ struct deckui
     // takes a card formatting string and formats in a note
     std::string do_format(std::string & format, card * c)
     {
-        puts("doing formatting");
         std::string formatted = "";
         
         const char * text = format.data();
@@ -1155,18 +1154,24 @@ struct deckui
             if(rank == 0) 
             {
                 schedule->learning = 2;
-                if(schedule->consecutive_flunks > 0)
+                schedule_minutes(now, schedule, 1);
+                // If we're on the first learning stage...
+                if(schedule->learning == 2)
                 {
-                    puts("learning flunk");
-                    schedule_minutes(now, schedule, 1);
-                    schedule->consecutive_flunks--;
-                }
-                else
-                {
-                    puts("learning flunk (leech, bury)");
-                    schedule_minutes(now, schedule, 1);
-                    schedule->consecutive_flunks = 8;
-                    schedule_bury(now, schedule, 1);
+                    // check the consecutive flunk counter
+                    if(schedule->consecutive_flunks > 0)
+                    {
+                        puts("learning flunk");
+                        schedule->consecutive_flunks--;
+                    }
+                    // if we exhausted our consecutive flunks on first learning stage cards, we're leeching
+                    // (the consecutive flunk count is only reset on graduation when buried)
+                    else
+                    {
+                        puts("learning flunk (leech, bury)");
+                        schedule->consecutive_flunks = 8;
+                        schedule_bury(now, schedule, 1);
+                    }
                 }
             }
             // pass: depends on learning stage
@@ -1174,8 +1179,7 @@ struct deckui
             {
                 schedule->learning--;
                 
-                // flunked on the first learning stage, card is leeching
-                if(schedule->learning == 2)
+                if(schedule->learning > 0)
                 {
                     puts("learning step");
                     schedule_minutes(now, schedule, 5);
@@ -1185,12 +1189,15 @@ struct deckui
                 {
                     puts("learning graduation");
                     schedule_days(now, schedule, 1);
+                    schedule->consecutive_flunks = 8;
                 }
             }
         }
         // review queue card
         else
         {
+            // failsafe
+            schedule->consecutive_flunks = 8;
             // if this is a followup review
             if(schedule->day_interval < schedule->last_good_day_interval)
             {
@@ -1259,12 +1266,14 @@ struct deckui
         puts("making list of available cards");
         for(auto card : currentdeck.cards)
         {
-            puts("checking card for availability");
             auto schedule = card->s;
             
             // if buried, skip
             if((schedule->days_repped > 0 or schedule->learning == 0) and now < schedule->day_buried_until)
+            {
+                puts("Buried card");
                 continue;
+            }
             
             // for later
             if(schedule->learning > 0 and schedule->days_repped > 0)
