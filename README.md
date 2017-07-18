@@ -16,7 +16,7 @@ Create the directory path depend/sdl2/ in the repository root, extract the conte
 
 ![example](https://i.imgur.com/OrvPY93.png)
 
-If necessary, modify compile-sh to correspond to your compilation target environment's architecture.
+If necessary, modify compile.sh to correspond to your compilation target environment's architecture.
 
 Recommended toolchain is Mingw-w64 from mingwbuilds. Msys2 is not recommended. Msys2 repackages libraries and monica has not been tested with Msys2's specific repackaging of SDL2, and Msys2 packages do not see extensive testing as linux distro packages do.
 
