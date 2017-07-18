@@ -787,22 +787,6 @@ struct note {
     }
 };
 
-// FIXME: might be backwards (1/x)
-const double seconds_per_time = (60.0*60.0)/difftime(60*60, 0);
-
-int days_between(time_t t1, time_t t2)
-{
-    auto local1 = *localtime(&t1);
-    auto local2 = *localtime(&t2);
-    int seconds_into_day_1 = local1.tm_sec + local1.tm_min*60 + local1.tm_hour*60*60;
-    int seconds_into_day_2 = local2.tm_sec + local2.tm_min*60 + local2.tm_hour*60*60;
-    t1 -= seconds_into_day_1/seconds_per_time;
-    t2 -= seconds_into_day_2/seconds_per_time;
-    double diff_seconds = difftime(t2, t1);
-    int between = floor(diff_seconds/60/60/24);
-    return between;
-}
-
 // a formatting element is a virtual version of a UI element
 struct formatting
 {
@@ -829,7 +813,8 @@ struct format
 
 struct scheduling
 {
-    time_t time_added, time_scheduled_from, time_scheduled_for, time_last_seen;
+    time_t time_added, time_scheduled_from, time_scheduled_for, time_last_seen, day_buried_until; // day_scheduled_for is only used for buried cards
+    int consecutive_flunks = 8;
     int day_interval = 1;
     int last_good_day_interval = 1;
     int days_repped, times_flunked, times_passed;
@@ -845,21 +830,56 @@ struct card
 };
 
 
+// FIXME: might be backwards (1/x)
+const double seconds_per_time = (60.0*60.0)/difftime(60*60, 0);
+
+time_t time_floor_to_midnight(time_t t)
+{
+    auto local = *localtime(&t);
+    int seconds_into_day = local.tm_sec + local.tm_min*60 + local.tm_hour*60*60;
+    t -= seconds_into_day/seconds_per_time;
+    return t;
+}
+int days_between(time_t t1, time_t t2)
+{
+    double diff_seconds = difftime(time_floor_to_midnight(t2), time_floor_to_midnight(t1));
+    int between = floor(diff_seconds/60/60/24);
+    return between;
+}
 time_t add_seconds(time_t start, int seconds)
 {
     return start+seconds*seconds_per_time;
 }
+time_t add_minutes(time_t start, int minutes)
+{
+    return add_seconds(start, minutes*60);
+}
+time_t add_hours(time_t start, int hours)
+{
+    return add_minutes(start, hours*60);
+}
+time_t add_days(time_t start, int days)
+{
+    return add_hours(start, days*24);
+}
+
 void schedule_minutes(time_t now, scheduling * schedule, int minutes)
 {
     schedule->time_scheduled_from = now;
-    schedule->time_scheduled_for = add_seconds(now, minutes*60);
+    schedule->time_scheduled_for = add_minutes(now, minutes);
     schedule->day_interval = 0;
+    schedule->day_buried_until = 0;
 }
 void schedule_days(time_t now, scheduling * schedule, int days)
 {
     schedule->time_scheduled_from = now;
-    schedule->time_scheduled_for = add_seconds(now, days*60*60*24);
+    schedule->time_scheduled_for = add_days(now, days);
     schedule->day_interval = days;
+    schedule->day_buried_until = 0;
+}
+void schedule_bury(time_t now, scheduling * schedule, int days)
+{
+    schedule->day_buried_until = add_days(time_floor_to_midnight(now), days);
 }
 
 // a deck is a collection of notes and cards
@@ -1128,24 +1148,34 @@ struct deckui
             schedule->days_repped++;
         
         // TODO:
-        // 1: Handle flunks gracefully, with a one- or two- day testing followup.
-        // 2: Automatically bury cards that relapse too many times (5? 8?)
+        // 1: Automatically bury cards that relapse too many times (5? 8?)
         if(schedule->learning > 0)
         {
             // flunk: reset to first learning step
             if(rank == 0) 
             {
-                puts("learning flunk");
                 schedule->learning = 2;
-                schedule_minutes(now, schedule, 1);
+                if(schedule->consecutive_flunks > 0)
+                {
+                    puts("learning flunk");
+                    schedule_minutes(now, schedule, 1);
+                    schedule->consecutive_flunks--;
+                }
+                else
+                {
+                    puts("learning flunk (leech, bury)");
+                    schedule_minutes(now, schedule, 1);
+                    schedule->consecutive_flunks = 8;
+                    schedule_bury(now, schedule, 1);
+                }
             }
             // pass: depends on learning stage
             else
             {
                 schedule->learning--;
                 
-                // wasn't the last learning stage: five minutes
-                if(schedule->learning > 0)
+                // flunked on the first learning stage, card is leeching
+                if(schedule->learning == 2)
                 {
                     puts("learning step");
                     schedule_minutes(now, schedule, 5);
@@ -1231,6 +1261,10 @@ struct deckui
         {
             puts("checking card for availability");
             auto schedule = card->s;
+            
+            // if buried, skip
+            if((schedule->days_repped > 0 or schedule->learning == 0) and now < schedule->day_buried_until)
+                continue;
             
             // for later
             if(schedule->learning > 0 and schedule->days_repped > 0)
