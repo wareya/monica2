@@ -30,6 +30,10 @@ If necessary, modify compile.sh to correspond to your compilation target environ
 
 Recommended toolchain is Mingw-w64 from mingwbuilds. Msys2 is not recommended. Msys2 repackages libraries and monica has not been tested with Msys2's specific repackaging of SDL2, and Msys2 packages do not see extensive testing as linux distro packages do.
 
+# Usage
+
+Download NotoSansCJKjp-Regular.otf and place it next to the executable. This is a prealpha problem, in the future fonts will be specified by the format.
+
 # Tech notes
 
 Environment should return unix timestamps from time() for best compatibility, but this is not technically required. Using monica on a system where this is not the case will result in scheduling data that gives bogus dates when loaded on other platforms, because scheduling data is stored as a numeric timestamp.

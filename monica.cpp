@@ -866,7 +866,7 @@ time_t add_days(time_t start, int days)
     return add_hours(start, days*24);
 }
 
-// Get current time, plus whatever the offset is (not hooked into anything right now)
+// Get current time, plus whatever the offset is
 int offset_hours = 0;
 time_t time()
 {
@@ -1218,127 +1218,6 @@ void load_format(deck * mydeck)
     }
 }
 
-// Deserialize scheduling state
-void deserialize(deck * mydeck)
-{
-    puts("loading scheduling");
-    // read the current scheduling state in from disk
-    std::ifstream file("cards.txt");
-    std::string str;
-    bool first = true;
-    int version = 0;
-    while (std::getline(file, str))
-    {
-        if(first)
-        {
-            if(str == "version1")
-                version = 1;
-            first = false;
-        }
-        else if(version == 1)
-        {
-            std::string match = "";
-            std::vector<std::string> matches;
-            for(auto ch : str)
-            {
-                if(ch != ' ' and ch != '\n' and ch != '\0')
-                    match += ch;
-                else if(match != "")
-                {
-                    matches.push_back(match);
-                    match = "";
-                }
-            }
-            if(match != "")
-            {
-                matches.push_back(match);
-                match = "";
-            }
-            if(matches.size() != 15)
-            {
-                puts("ERROR: A card's scheduling data has the wrong number of fields. The card will be discarded.");
-                for(auto m : matches)
-                    puts(m.data());
-                continue;
-            }
-            else
-            {
-                try
-                {
-                    int i = 0;
-                    auto nid = std::stoull(matches[i++]);
-                    auto fid = std::stoull(matches[i++]);
-                    
-                    auto c = mydeck->try_insert_new_card(nid, fid);
-                    if(!c)
-                        puts("ERROR: Tried to insert a card that either already exists or has an invalid note id or format id. The card will be discarded.");
-                    else
-                    {
-                        scheduling s;
-                        s.time_added = std::stoll(matches[i++]);
-                        s.time_scheduled_from = std::stoll(matches[i++]);
-                        s.time_scheduled_for = std::stoll(matches[i++]);
-                        s.time_last_seen = std::stoll(matches[i++]);
-                        s.day_buried_until = std::stoll(matches[i++]);
-                        
-                        s.consecutive_flunks = std::stoi(matches[i++]);
-                        s.day_interval = std::stoi(matches[i++]);
-                        s.last_good_day_interval = std::stoi(matches[i++]);
-                        
-                        s.days_repped = std::stoi(matches[i++]);
-                        s.times_flunked = std::stoi(matches[i++]);
-                        s.times_passed = std::stoi(matches[i++]);
-                        
-                        s.ease = std::stof(matches[i++]);
-                        s.learning = std::stoi(matches[i++]);
-                        
-                        c->s = s;
-                    }
-                }
-                catch (const std::invalid_argument& e)
-                {
-                    puts("ERROR: A field in a card is invalid. The card will be discarded.");
-                }
-                catch (const std::out_of_range& e)
-                {
-                    puts("ERROR: A field in a card is too large. The card will be discarded.");
-                }
-            }
-        }
-    }
-}
-
-// Serialize scheduling state
-void serialize(deck * mydeck)
-{
-    auto & cards = mydeck->cards;
-    // make a backup with a date-based name
-    char newfname[128];
-    auto now = time();
-    auto tm_now = localtime(&now);
-    auto err = strftime(newfname, 128, "cards_backup_%Y%m%d", tm_now);
-    if(err != 0)
-        rename("cards.txt", newfname);
-    else
-        rename("cards.txt", "cards_backup_dateless");
-    // write the current scheduling state out to disk
-    auto f = fopen("cards.txt", "wb");
-    fputs("version1\n", f);
-    for(auto && [k, c] : cards)
-    {
-        fprintf(f, "%lld %lld %lld %lld %lld %lld %lld %d %d %d %d %d %d %f %d\n",
-            c->n->unique_id, c->f->unique_id,
-            c->s.time_added, c->s.time_scheduled_from, c->s.time_scheduled_for, c->s.time_last_seen, c->s.day_buried_until, 
-            c->s.consecutive_flunks, c->s.day_interval, c->s.last_good_day_interval,
-            c->s.days_repped, c->s.times_flunked, c->s.times_passed,
-            c->s.ease,
-            c->s.learning
-        );
-    }
-    fclose(f);
-    puts("saved schedule");
-}
-
 // user interface for the deck
 struct deckui
 {
@@ -1349,7 +1228,9 @@ struct deckui
     card * currentcard;
     deck currentdeck;
     
-    int new_notes_today = 3;
+    int notes_daily = 3;
+    int new_notes_today = notes_daily;
+    time_t note_day = time_floor_to_midnight(time());
     
     element * donefornow = nullptr;
     
@@ -1383,7 +1264,8 @@ struct deckui
     }
     void initialize_display()
     {
-        auto cardlist = available(time());
+        auto now = time();
+        auto cardlist = available(now);
         if(cardlist.size() > 0)
         {
             puts("setting up initial card");
@@ -1704,10 +1586,22 @@ struct deckui
             stash();
     }
     
+    void check_day_reset(time_t now)
+    {
+        auto day = time_floor_to_midnight(now);
+        if(note_day != day)
+        {
+            new_notes_today = notes_daily;
+            note_day = day;
+        }
+    }
+    
     // find available cards
     // order of cards in returned vector is undefined
     std::vector<card *> available(time_t now)
     {
+        check_day_reset(now);
+        
         std::vector<card *> ret;
         std::vector<card *> learning_cards;
         puts("making list of available cards");
@@ -1778,6 +1672,161 @@ struct deckui
             elements.push_back(e);
         }
         elements.push_back(donefornow);
+    }
+    
+    // Deserialize scheduling state
+    void deserialize(deck * mydeck)
+    {
+        puts("loading scheduling");
+        // read the current scheduling state in from disk
+        std::ifstream file("cards.txt");
+        std::string str;
+        int line = 0;
+        int version = 0;
+        while (std::getline(file, str))
+        {
+            if(line == 0)
+            {
+                if(str == "version2")
+                    version = 1;
+            }
+            else if(version == 1)
+            {
+                std::string match = "";
+                std::vector<std::string> matches;
+                for(auto ch : str)
+                {
+                    if(ch != ' ' and ch != '\n' and ch != '\0')
+                        match += ch;
+                    else if(match != "")
+                    {
+                        matches.push_back(match);
+                        match = "";
+                    }
+                }
+                if(match != "")
+                {
+                    matches.push_back(match);
+                    match = "";
+                }
+                if(line == 1)
+                {
+                    if(matches.size() != 4)
+                    {
+                        puts("ERROR: Wrong number of scheduling metadata fields. Can't do anything.");
+                        for(auto m : matches)
+                            puts(m.data());
+                        return;
+                    }
+                    else
+                    {
+                        try
+                        {
+                            offset_hours = std::stoi(matches[0]);
+                            note_day = std::stoi(matches[1]);
+                            notes_daily = std::stoi(matches[2]);
+                            new_notes_today = std::stoi(matches[3]);
+                        }
+                        catch (const std::invalid_argument& e)
+                        {
+                            puts("ERROR: A field in the scheduling metadata is invalid. Can't do anything.");
+                            return;
+                        }
+                        catch (const std::out_of_range& e)
+                        {
+                            puts("ERROR: A field in the scheduling metadata is too large. Can't do anything.");
+                            return;
+                        }
+                    }
+                }
+                else
+                {
+                    if(matches.size() != 15)
+                    {
+                        puts("ERROR: A card's scheduling data has the wrong number of fields. The card will be discarded.");
+                        for(auto m : matches)
+                            puts(m.data());
+                        continue;
+                    }
+                    else
+                    {
+                        try
+                        {
+                            int i = 0;
+                            auto nid = std::stoull(matches[i++]);
+                            auto fid = std::stoull(matches[i++]);
+                            
+                            auto c = mydeck->try_insert_new_card(nid, fid);
+                            if(!c)
+                                puts("ERROR: Tried to insert a card that either already exists or has an invalid note id or format id. The card will be discarded.");
+                            else
+                            {
+                                scheduling s;
+                                s.time_added = std::stoll(matches[i++]);
+                                s.time_scheduled_from = std::stoll(matches[i++]);
+                                s.time_scheduled_for = std::stoll(matches[i++]);
+                                s.time_last_seen = std::stoll(matches[i++]);
+                                s.day_buried_until = std::stoll(matches[i++]);
+                                
+                                s.consecutive_flunks = std::stoi(matches[i++]);
+                                s.day_interval = std::stoi(matches[i++]);
+                                s.last_good_day_interval = std::stoi(matches[i++]);
+                                
+                                s.days_repped = std::stoi(matches[i++]);
+                                s.times_flunked = std::stoi(matches[i++]);
+                                s.times_passed = std::stoi(matches[i++]);
+                                
+                                s.ease = std::stof(matches[i++]);
+                                s.learning = std::stoi(matches[i++]);
+                                
+                                c->s = s;
+                            }
+                        }
+                        catch (const std::invalid_argument& e)
+                        {
+                            puts("ERROR: A field in a card is invalid. The card will be discarded.");
+                        }
+                        catch (const std::out_of_range& e)
+                        {
+                            puts("ERROR: A field in a card is too large. The card will be discarded.");
+                        }
+                    }
+                }
+            }
+            line++;
+        }
+    }
+
+    // Serialize scheduling state
+    void serialize(deck * mydeck)
+    {
+        auto & cards = mydeck->cards;
+        // make a backup with a date-based name
+        char newfname[128];
+        auto now = time();
+        auto tm_now = localtime(&now);
+        auto err = strftime(newfname, 128, "cards_backup_%Y%m%d", tm_now);
+        if(err != 0)
+            rename("cards.txt", newfname);
+        else
+            rename("cards.txt", "cards_backup_dateless");
+        // write the current scheduling state out to disk
+        auto f = fopen("cards.txt", "wb");
+        fprintf(f, "version2\n");
+        fprintf(f, "%d %lld %d %d\n", offset_hours, note_day, notes_daily, new_notes_today);
+        for(auto && [k, c] : cards)
+        {
+            fprintf(f, "%lld %lld %lld %lld %lld %lld %lld %d %d %d %d %d %d %f %d\n",
+                c->n->unique_id, c->f->unique_id,
+                c->s.time_added, c->s.time_scheduled_from, c->s.time_scheduled_for, c->s.time_last_seen, c->s.day_buried_until, 
+                c->s.consecutive_flunks, c->s.day_interval, c->s.last_good_day_interval,
+                c->s.days_repped, c->s.times_flunked, c->s.times_passed,
+                c->s.ease,
+                c->s.learning
+            );
+        }
+        fclose(f);
+        puts("saved schedule");
     }
 };
 
