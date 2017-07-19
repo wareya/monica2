@@ -1234,6 +1234,8 @@ struct deckui
     
     element * donefornow = nullptr;
     
+    int displaystate = 0; // 0: stashed; 1: front; 2: back
+    
     deckui()
     {
         load_format(&currentdeck);
@@ -1378,6 +1380,7 @@ struct deckui
     bool stashed = true;
     void stash()
     {
+        displaystate = 0;
         puts("calling stash");
         stashed = true;
         for(auto p : associations)
@@ -1404,6 +1407,7 @@ struct deckui
     // shows the front of the given card
     void refresh(card * c)
     {
+        displaystate = 1;
         currentcard = c;
         
         if(currentcard == nullptr)
@@ -1433,6 +1437,7 @@ struct deckui
     // shows the back of the current card
     void flip()
     {
+        displaystate = 2;
         if(currentcard == nullptr) return;
         
         unstash();
@@ -1937,6 +1942,23 @@ int main()
                     }
                 }
                 pressedelement = nullptr;
+            }
+            if(event.type == SDL_KEYDOWN)
+            {
+                if(event.key.keysym.sym == SDLK_1)
+                {
+                    if(mydeckui.displaystate == 1)
+                        mydeckui.flip();
+                    else
+                        mydeckui.answer(0);
+                }
+                if(event.key.keysym.sym == SDLK_2)
+                {
+                    if(mydeckui.displaystate == 1)
+                        mydeckui.flip();
+                    else
+                        mydeckui.answer(1);
+                }
             }
         }
         
