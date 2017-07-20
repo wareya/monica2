@@ -1,3 +1,16 @@
+
+
+
+/*
+TODO:
+- Support for multiple decks via folders; deck selection UI
+- Font determined by formats instead of hardcoded
+- Suspension (with forced tagging: delete, annoying, known)
+- Manual burying?
+- "Undo"
+- Import notes?
+*/
+
 #include <SDL2/SDL.h>
 #undef main
 
@@ -306,6 +319,16 @@ struct graphics
     // Takes a bitmap cache because font rasterization is not actually that fast.
     void string(SDL_Surface * surface, std::map<uint64_t, crap> * cache, int x, int y, const char * text, uint8_t red, uint8_t green, uint8_t blue, float size)
     {
+        string(surface, cache, x, y, surface->w, surface->h, text, red, green, blue, size);
+    }
+    void string(SDL_Surface * surface, std::map<uint64_t, crap> * cache, int x, int y, int x2, int y2, const char * text, uint8_t red, uint8_t green, uint8_t blue, float size)
+    {
+        string(surface, cache, x, y, x, y, x2, y2, text, red, green, blue, size);
+    }
+    // TODO: Make centering part of string() instead of done in the mainloop's render logic, so that multi-line justification works properly instead of being a hack
+    // FIXME: Make (e.g. english) text with spaces wrap by the word, not by the character
+    void string(SDL_Surface * surface, std::map<uint64_t, crap> * cache, int x, int y, int x1, int y1, int x2, int y2, const char * text, uint8_t red, uint8_t green, uint8_t blue, float size)
+    {
         float fontscale = stbtt_ScaleForPixelHeight(&fontinfo, size);
         
         float real_x = x;
@@ -319,6 +342,11 @@ struct graphics
         int linespan = ascent - descent + linegap;
         
         y += ascent*fontscale;
+        
+        y1 = max(0, y1);
+        x1 = max(0, x1);
+        y2 = min(surface->h, y2);
+        x2 = min(surface->w, x2);
         
         while(textlen > 0)
         {
@@ -337,7 +365,7 @@ struct graphics
                     {
                         lastindex = 0;
                         y += linespan*fontscale;
-                        real_x = x;
+                        real_x = x1;
                         continue;
                     }
                     
@@ -353,14 +381,14 @@ struct graphics
                     
                     float advancepixels = fontscale*advance;
                     
-                    if(advancepixels + real_x > surface->w)
+                    if(advancepixels + real_x > x2)
                     {
                         lastindex = 0;
                         y += linespan*fontscale;
-                        real_x = x;
+                        real_x = x1;
                     }
                     
-                    if(y-ascent*fontscale > surface->h) break;
+                    if(y-ascent*fontscale > y2) break;
                     
                     //float bearingpixels = fontscale*bearing; // Not needed when using stbtt_GetCodepointBitmapSubpixel, it seems
                     float temp_x = real_x;// + bearingpixels; // target x to draw at
@@ -383,13 +411,13 @@ struct graphics
                             for(int i = 0; i < height; i++)
                             {
                                 const int out_y = i + y + yoff;
-                                if(out_y < 0) continue;
-                                if(out_y >= surface->h) break;
+                                if(out_y < y1) continue;
+                                if(out_y >= y2) break;
                                 for(int j = 0; j < width; j++)
                                 {
                                     const int out_x = j + int_temp_x + xoff;
-                                    if (out_x < 0) continue;
-                                    if (out_x >= surface->w) break;
+                                    if (out_x < x1) continue;
+                                    if (out_x >= x2) break;
                                     const float alpha = data[i*width + j]/255.0f;
                                     if(alpha > 0.5f/255.0f) // skip trivial blank case
                                     {
@@ -424,7 +452,7 @@ struct graphics
                                     
                                     int out_y = i + y + yoff;
                                     int out_x = j + int_temp_x + xoff;
-                                    if(out_y < 0 or out_y >= surface->h or out_x < 0 or out_x >= surface->w) continue;
+                                    if(out_y < 0 or out_y >= y2 or out_x < 0 or out_x >= x2) continue;
                                     uint8_t * const pointer = ((uint8_t *)surface->pixels) + (out_y*surface->pitch + out_x*surface->format->BytesPerPixel);
                                     
                                     uint32_t output;
@@ -584,7 +612,8 @@ struct element {
     std::string text;
     posdata textx, texty;
     int textsize;
-    bool textcenter = false;
+    bool textcenter_x = false;
+    bool textcenter_y = false;
     triad background, foreground;
     int clickaction = 0;
     bool active = true;
@@ -626,7 +655,8 @@ struct element {
         this->clickaction = clickaction;
         this->active = true;
         
-        this->textcenter = true;
+        this->textcenter_x = true;
+        this->textcenter_y = true;
     }
     
     element(posdata x, posdata y, posdata w, posdata h, triad background, triad foreground)
@@ -695,9 +725,12 @@ struct element {
 // a note is a collection of fields, loaded here from a TSV line
 struct note {
     std::vector<std::string> fields;
-    uint64_t unique_id = 0;
-    note(std::string line)
+    uint64_t unique_id = 0; // real unique id, first field of card. MUST be persistent across edits.
+    uint64_t i; // which note this is in the list of notes, used to order new cards only. MUST be in linear order in the note file.
+    note(std::string line, uint64_t i)
     {
+        this->i = i;
+        
         const char * text = line.data();
         const char * start = text;
         
@@ -843,6 +876,7 @@ time_t time_floor_to_midnight(time_t t)
     t -= seconds_into_day/seconds_per_time;
     return t;
 }
+// returns a positive number when t2 is larger
 int days_between(time_t t1, time_t t2)
 {
     double diff_seconds = difftime(time_floor_to_midnight(t2), time_floor_to_midnight(t1));
@@ -951,82 +985,6 @@ struct deck
     }
 };
 
-
-/*
-File format:
-# are comments only in this description. The format itself does not suport comments.
-
-Format: (monica never overwrites ever, must be created by hand or generated externally)
-Indentation is not meaningful.
-----
-# colons are object beginnings
-0: # Unique ID
- common: # type
-  20 EARLY true # x position, EARLY = from start of screen, true = percentage of screen width, false = pixels
-  20 EARLY true # y position
-  60 EARLY true # width (60% of screen, ends at the 80% mark)
-  20 EARLY true # height
-  255 # red
-  255 # green
-  255 # blue
-  {0} # field text (runs till newline), note the lack of space before the comment
-  64 # text pixel size
-  true # is text instead of just a colored background element
- 
- front: # blank or whitespace-only lines are object endings
-  20 EARLY true
-  40 EARLY true
-  60 EARLY true
-  20 EARLY true
-  255
-  255
-  255
-  ({1})
-  64
-  true
- 
- answer:
-  20 EARLY true
-  40 EARLY true
-  60 EARLY true
-  20 EARLY true
-  255
-  255
-  255
-  Meaning:\n{2}
-  64
-  true
-----
-
-Notes: (monica never overwrites ever, must be created by hand or generated externally)
-first field is a unique ID (so that removing notes doesn't change other notes' identities)
-fields are TSV
-----
-0	日本	にほん\nにっぽん	"japan	/	japan (traditional)"
-1	犬	いぬ	dog
-2	𠂇		hand
-----
-
-Cards/scheduling:
-linear unpacking of struct, space- or tab-separated:
-    time_t time_added, time_scheduled_from, time_scheduled_for, time_last_seen, day_buried_until;
-    int consecutive_flunks = 8;
-    int day_interval = 1;
-    int last_good_day_interval = 1;
-    int days_repped, times_flunked, times_passed;
-    float ease = 2.5;
-    int learning = 2; // learning step, 2 is first, 1 is second, 0 is graduated
-first two fields are, respectively, the unique ID of the note and the unique ID of the format
-Generated by monica.
-----
-version1 # version header in case I ever want to change the scheduling format
-0 0 0 0 0 0 0 8 1 1 0 0 0 2.5 2
-1 0 0 0 0 0 0 8 1 1 0 0 0 2.5 2
-2 0 0 0 0 0 0 8 1 1 0 0 0 2.5 2
-----
-
-*/
-
 // TODO: Support multiple decks via folders
 
 void load_notes(deck * mydeck)
@@ -1034,8 +992,9 @@ void load_notes(deck * mydeck)
     puts("loading note");
     std::ifstream file("notes.txt");
     std::string str;
+    uint64_t i = 0;
     while (std::getline(file, str))
-        mydeck->add_note(new note(str));
+        mydeck->add_note(new note(str, i++));
 }
 posdata posdata_from_string(std::string str)
 {
@@ -1254,7 +1213,7 @@ struct deckui
                     myelement = new element(e->x, e->y, e->w, e->h, true, false, "<uninitialized>", 0, 0, e->fontsize, {e->r, e->g, e->b}, {128,0,0} );
                 else
                     myelement = new element(e->x, e->y, e->w, e->h, false, false, "<uninitialized>", 0, 0, e->fontsize, {128,0,0}, {e->r, e->g, e->b} );
-                myelement->textcenter = e->centered;
+                myelement->textcenter_x = e->centered;
                 associations.push_back(std::pair<formatting *, element *> { e, myelement });
             }
         }
@@ -1262,7 +1221,8 @@ struct deckui
         donefornow = new element(
             posdata(20, EARLY, true), posdata(40, EARLY, true), posdata(60, EARLY, true), posdata(20, EARLY, true),
             false, false, "No cards left to study today", 0, 0, 32, {0, 0, 0}, {255, 255, 255});
-        donefornow->textcenter = true;
+        donefornow->textcenter_x = true;
+        donefornow->textcenter_y = true;
     }
     void initialize_display()
     {
@@ -1271,7 +1231,6 @@ struct deckui
         if(cardlist.size() > 0)
         {
             puts("setting up initial card");
-            cardsort(cardlist);
             currentcard = cardlist[0];
             refresh(currentcard);
         }
@@ -1281,27 +1240,6 @@ struct deckui
             currentcard = nullptr;
             stash();
         }
-    }
-    
-    void cardsort(std::vector<card *> & cardlist)
-    {
-        std::sort(cardlist.begin(), cardlist.end(), [this](card * a, card * b)
-        {
-            if(a == nullptr and b == nullptr) return false;
-            if(b == nullptr) return false;
-            if(a == nullptr) return true;
-            
-            // TODO: sort based on time, decide how to prioritize cards and whether to randomize anything
-            
-            // highest priority different is note ID difference
-            if(a->n->unique_id != b->n->unique_id) return (a->n->unique_id < b->n->unique_id);
-            // second is format ID difference
-            if(a->f->unique_id != b->f->unique_id) return (a->f->unique_id < b->f->unique_id);
-            // you should never have multiple card with both the same format and note id
-            // but supposing a bit flips somewhere, the different should be based on time instead of crashing the program
-            // this is only for runtime; when loading the db, one of the cards will be ignored
-            return a->s.time_last_seen < b->s.time_last_seen;
-        });
     }
     
     // takes a card formatting string and formats in a note
@@ -1459,7 +1397,6 @@ struct deckui
     }
     
     // answers and reschedules the current note
-    // TODO: add virtual time adjustment for debugging and to tolerate sleep cycle disorders or disruptions
     void answer(int rank = 0) // rank - 0: flunk; 1: good; (for now)
     {
         if(stashed) return;
@@ -1581,7 +1518,6 @@ struct deckui
     void next(time_t now)
     {
         auto cardlist = available(now);
-        cardsort(cardlist);
         if(cardlist.size() > 0)
         {
             currentcard = cardlist[0];
@@ -1601,13 +1537,59 @@ struct deckui
         }
     }
     
-    // find available cards
-    // order of cards in returned vector is undefined
+    void sort_new(std::vector<card *> & cardlist)
+    {
+        std::sort(cardlist.begin(), cardlist.end(), [this](card * a, card * b)
+        {
+            if(a == nullptr and b == nullptr) return false;
+            if(b == nullptr) return false;
+            if(a == nullptr) return true;
+            // sort new cards by their note's position in the notes file
+            if(a->n->i != b->n->i)
+                return a->n->i < b->n->i;
+            // if same note, sort by their format's unique ID instead
+            else
+                return a->f->unique_id < b->f->unique_id;
+                
+        });
+    }
+    void sort_learn(std::vector<card *> & cardlist)
+    {
+        std::sort(cardlist.begin(), cardlist.end(), [this](card * a, card * b)
+        {
+            if(a == nullptr and b == nullptr) return false;
+            if(b == nullptr) return false;
+            if(a == nullptr) return true;
+            // sort learning cards by time waited
+            return a->s.time_scheduled_from < b->s.time_scheduled_from;
+        });
+    }
+    void sort_review(std::vector<card *> & cardlist, time_t now)
+    {
+        std::sort(cardlist.begin(), cardlist.end(), [this, now](card * a, card * b)
+        {
+            if(a == nullptr and b == nullptr) return false;
+            if(b == nullptr) return false;
+            if(a == nullptr) return true;
+            // sort review cards by proportional overdueness
+            float a_overdueness = days_between(a->s.time_scheduled_for, now)/a->s.day_interval; // example: days_between(2, 5)/2 -> 3/2 -> 1.5 (mid importance)
+            float b_overdueness = days_between(b->s.time_scheduled_for, now)/b->s.day_interval; // example: days_between(2, 5)/3 -> 3/3 -> 1.0 (low importance);  example: days_between(2, 6)/2 -> 4/2 -> 2.0 (high importance)
+            if(a_overdueness != b_overdueness)
+                return a_overdueness > b_overdueness; // inequality is inverted because small is less important here
+            else
+                return a->s.time_scheduled_from < b->s.time_scheduled_from;
+        });
+    }
+    // find some available cards
+    // sorted by preferred first
+    // the vector is not the list of all available cards, only the ones in the queue that available() rolls dice to select
     std::vector<card *> available(time_t now)
     {
         check_day_reset(now);
         
-        std::vector<card *> ret;
+        std::vector<card *> available_new;
+        std::vector<card *> available_learning;
+        std::vector<card *> available_review;
         std::vector<card *> learning_cards;
         puts("making list of available cards");
         for(auto && [k, card] : currentdeck.cards)
@@ -1628,25 +1610,25 @@ struct deckui
             if(schedule.learning > 0 and schedule.days_repped > 0 and now >= schedule.time_scheduled_for)
             {
                 puts("learning card");
-                ret.push_back(card);
+                available_learning.push_back(card);
             }
             // new card
             else if(schedule.learning > 0 and schedule.days_repped == 0 and new_notes_today > 0)
             {
                 puts("new card");
-                ret.push_back(card);
+                available_new.push_back(card);
             }
             // rep card
-            else if(schedule.learning == 0 and days_between(now, schedule.time_scheduled_for) <= 0)
+            else if(schedule.learning == 0 and days_between(now, schedule.time_scheduled_for) <= 0 and schedule.day_interval > 0)
             {
                 puts("rep card");
                 printf("scheduled for: %lld\n", schedule.time_scheduled_for);
                 printf("now: %lld\n", now);
-                ret.push_back(card);
+                available_review.push_back(card);
             }
         }
         // bring learning cards closer to now by the study ahead limit (FIXME: hardcoded 5 minutes) if we're out of stuff to study
-        if(ret.size() == 0 and learning_cards.size() > 0)
+        if(available_new.size() == 0 and available_learning.size() == 0 and available_review.size() == 0 and learning_cards.size() > 0)
         {
             for(auto card : learning_cards)
             {
@@ -1660,12 +1642,27 @@ struct deckui
                 if(now >= schedule.time_scheduled_for)
                 {
                     puts("unprepared card");
-                    ret.push_back(card);
+                    available_learning.push_back(card);
                 }
                 
             }
         }
-        return ret;
+        
+        // pure laziness
+        srand(now);
+        rand(); // some rand() implementations are broken and seed after the next call
+        float check_new      = available_new     .size()?(rand()/(float)RAND_MAX*available_new     .size()):-1;
+        float check_learning = available_learning.size()?(rand()/(float)RAND_MAX*available_learning.size()):-1;
+        float check_review   = available_review  .size()?(rand()/(float)RAND_MAX*available_review  .size()):-1;
+        
+        printf("%d %.2f; %d %.2f; %d %.2f\n", available_new.size(), check_new, available_learning.size(), check_learning, available_review.size(), check_review);
+        
+        if(check_review > check_new and check_review > check_learning)
+            return available_review;
+        else if(check_new > check_learning)
+            return available_new;
+        else
+            return available_learning;
     }
     
     // informs the UI about our UI elements
@@ -1872,7 +1869,7 @@ int main()
     // Pointless test text
     const char * prealphawarning = "Prealpha Software\nプレアルファ";
     int prealphasize = 16;
-    elements.push_back(new element(posdata(-backend.string_width_pixels(prealphawarning, prealphasize), LATE), posdata(-prealphasize*2, LATE), posdata(0, LATE), posdata(prealphasize, EARLY), false, false,
+    elements.push_back(new element(posdata(-backend.string_width_pixels(prealphawarning, prealphasize), LATE), posdata(-prealphasize*2, LATE), posdata(0, LATE), posdata(prealphasize*2, EARLY), false, false,
         prealphawarning,
         0, 0, prealphasize, {0,0,0}, {255,255,255}));
     
@@ -1883,7 +1880,6 @@ int main()
         static element * pressedelement = nullptr;
         while (SDL_PollEvent(&event))
         {
-            // TODO: hook in database saving stuff
             if (event.type == SDL_QUIT)
                 exit(0);
             
@@ -1984,20 +1980,23 @@ int main()
             {
                 int x;
                 int y;
-                if(!element->textcenter)
-                {
+                if(!element->textcenter_x)
                     x = element->x1(&backend);
-                    y = element->y1(&backend);
-                }
                 else
                 {
                     x = (element->x1(&backend)+element->x2(&backend))/2;
                     x -= backend.string_width_pixels(element->text.data(), element->textsize)/2;
-                    
+                    x = max(x, element->x1(&backend));
+                }
+                if(!element->textcenter_y)
+                    y = element->y1(&backend);
+                else
+                {
                     y = (element->y1(&backend)+element->y2(&backend))/2;
                     y -= backend.font_height_pixels(element->textsize)/2;
+                    y = max(y, element->y1(&backend));
                 }
-                backend.string(backend.surface, &element->bitmapcache, x, y, element->text.data(), element->foreground.r*factor, element->foreground.g*factor, element->foreground.b*factor, element->textsize);
+                backend.string(backend.surface, &element->bitmapcache, x, y, element->x1(&backend), element->y1(&backend), element->x2(&backend)+1, element->y2(&backend)+1, element->text.data(), element->foreground.r*factor, element->foreground.g*factor, element->foreground.b*factor, element->textsize);
             }
         }
         
@@ -2014,7 +2013,7 @@ int main()
         
         backend.update();
         
-        //SDL_Delay(16);
+        SDL_Delay(1);
     }
     
     return 0;
