@@ -954,6 +954,11 @@ struct deck
         card c;
         c.n = notes[note_id];
         c.f = formats[format_id];
+        c.s.time_added = 0;
+        c.s.time_scheduled_from = 0;
+        c.s.time_scheduled_for = 0;
+        c.s.time_last_seen = 0;
+        c.s.day_buried_until = 0;
         c.s.days_repped = 0;
         c.s.times_flunked = 0;
         c.s.times_passed = 0;
@@ -1335,6 +1340,7 @@ struct deckui
         }
         for(auto b : backbuttons)
             b->active = false;
+        serialize(&currentdeck);
     }
     void unstash()
     {
@@ -1655,7 +1661,7 @@ struct deckui
         float check_learning = available_learning.size()?(rand()/(float)RAND_MAX*available_learning.size()):-1;
         float check_review   = available_review  .size()?(rand()/(float)RAND_MAX*available_review  .size()):-1;
         
-        printf("%d %.2f; %d %.2f; %d %.2f\n", available_new.size(), check_new, available_learning.size(), check_learning, available_review.size(), check_review);
+        //printf("%d %.2f; %d %.2f; %d %.2f\n", available_new.size(), check_new, available_learning.size(), check_learning, available_review.size(), check_review);
         
         if(check_review > check_new and check_review > check_learning)
             return available_review;
