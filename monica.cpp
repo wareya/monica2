@@ -294,7 +294,7 @@ struct graphics
     }
     
     // Gets how wide in pixels the string would be with no wrapping if rendered at the given size. Measures virtual cursor advancement, not pixel coverage area.
-    int string_width_pixels(const char * text, float size)
+    float string_width_pixels(const char * text, float size)
     {
         float fontscale = stbtt_ScaleForPixelHeight(&fontinfo, size);
         
@@ -340,10 +340,10 @@ struct graphics
             }
         }
         if(real_x > max_real_x) max_real_x = real_x;
-        return ceil(max_real_x);
+        return max_real_x;
     }
     // same but with a vector reference
-    int string_width_pixels(std::vector<uint32_t> & text, float size)
+    float string_width_pixels(std::vector<uint32_t> & text, float size)
     {
         float fontscale = stbtt_ScaleForPixelHeight(&fontinfo, size);
         
@@ -373,22 +373,22 @@ struct graphics
             lastindex = index;
         }
         if(real_x > max_real_x) max_real_x = real_x;
-        return ceil(max_real_x);
+        return max_real_x;
     }
     
     // Renders unicode text, wrapping at the right edge of the window if necessary. Does not support right-to-left or vertical text or ligatures, but does support kerning and astral unicode.
     // Takes a bitmap cache because font rasterization is not actually that fast.
-    void string(SDL_Surface * surface, std::map<uint64_t, crap> * cache, int x, int y, const char * text, uint8_t red, uint8_t green, uint8_t blue, float size)
+    void string(SDL_Surface * surface, std::map<uint64_t, crap> * cache, float x, float y, const char * text, uint8_t red, uint8_t green, uint8_t blue, float size)
     {
         string(surface, cache, x, y, surface->w, surface->h, text, red, green, blue, size);
     }
-    void string(SDL_Surface * surface, std::map<uint64_t, crap> * cache, int x, int y, int x2, int y2, const char * text, uint8_t red, uint8_t green, uint8_t blue, float size)
+    void string(SDL_Surface * surface, std::map<uint64_t, crap> * cache, float x, float y, int x2, int y2, const char * text, uint8_t red, uint8_t green, uint8_t blue, float size)
     {
         string(surface, cache, x, y, x, y, x2, y2, text, red, green, blue, size, false, false);
     }
     // TODO: Make centering part of string() instead of done in the mainloop's render logic, so that multi-line justification works properly instead of being a hack
     // FIXME: Make (e.g. english) text with spaces wrap by the word, not by the character
-    void string(SDL_Surface * surface, std::map<uint64_t, crap> * cache, int x, int y, int x1, int y1, int x2, int y2, const char * text, uint8_t red, uint8_t green, uint8_t blue, float size, bool center_x, bool center_y)
+    void string(SDL_Surface * surface, std::map<uint64_t, crap> * cache, float x, float y, int x1, int y1, int x2, int y2, const char * text, uint8_t red, uint8_t green, uint8_t blue, float size, bool center_x, bool center_y)
     {
         float fontscale = stbtt_ScaleForPixelHeight(&fontinfo, size);
         
@@ -405,100 +405,102 @@ struct graphics
         x2 = min(surface->w, x2);
         
         std::vector<std::vector<uint32_t>> lines;
-        std::vector<uint64_t> widths;
-        std::vector<uint32_t> currline;
-        float real_x = x;
-        if(center_x)
-            real_x = x1;
         
-        uint32_t lastindex = 0;
-        while(textlen > 0)
+        // scoping block
         {
-            int advance = 0;
-            uint32_t codepoint = utf8_pull(text, textlen, &advance);
+            std::vector<uint32_t> currline;
+            float real_x = x;
+            if(center_x)
+                real_x = x1;
             
-            if (advance == 0 or advance > textlen)
-                break;
-            else
+            uint32_t lastindex = 0;
+            while(textlen > 0)
             {
-                textlen -= advance;
-                text += advance;
-                if (codepoint != 0xFFFFFFFF)
+                int advance = 0;
+                uint32_t codepoint = utf8_pull(text, textlen, &advance);
+                
+                if (advance == 0 or advance > textlen)
+                    break;
+                else
                 {
-                    if(codepoint == '\n')
+                    textlen -= advance;
+                    text += advance;
+                    if (codepoint != 0xFFFFFFFF)
                     {
-                        lines.push_back(currline);
-                        currline = {};
-                        continue;
-                    }
-                    
-                    int advance, bearing, width, height, xoff, yoff;
-                    
-                    uint32_t index = glyph_lookup(codepoint);
-                    
-                    stbtt_GetGlyphHMetrics(&fontinfo, index, &advance, &bearing);
-                    
-                    if(lastindex != 0)
-                        real_x += fontscale*stbtt_GetGlyphKernAdvance(&fontinfo, lastindex, index); // ?
-                    float advancepixels = fontscale*advance;
-                    
-                    real_x += advancepixels;
-                    lastindex = index;
-                    
-                    if(real_x > x2)
-                    {
-                        lastindex = 0;
-                        real_x = x1+advancepixels;
+                        if(codepoint == '\n')
+                        {
+                            lines.push_back(currline);
+                            currline = {};
+                            continue;
+                        }
                         
-                        bool lastallowsnewline = false;
-                        if(currline.size() > 0)
-                            if(allows_newline(currline.back()))
-                                lastallowsnewline = true;
-                        if(allows_newline(codepoint) or lastallowsnewline)
+                        int advance, bearing, width, height, xoff, yoff;
+                        
+                        uint32_t index = glyph_lookup(codepoint);
+                        
+                        stbtt_GetGlyphHMetrics(&fontinfo, index, &advance, &bearing);
+                        
+                        if(lastindex != 0)
+                            real_x += fontscale*stbtt_GetGlyphKernAdvance(&fontinfo, lastindex, index); // ?
+                        float advancepixels = fontscale*advance;
+                        
+                        real_x += advancepixels;
+                        lastindex = index;
+                        
+                        if(real_x > x2)
                         {
-                            lines.push_back(currline);
-                            currline = {};
-                        }
-                        else
-                        {
-                            std::deque<uint32_t> temp;
-                            while(1)
+                            lastindex = 0;
+                            real_x = x1+advancepixels;
+                            
+                            bool lastallowsnewline = false;
+                            if(currline.size() > 0)
+                                if(allows_newline(currline.back()))
+                                    lastallowsnewline = true;
+                            if(allows_newline(codepoint) or lastallowsnewline)
                             {
-                                if(currline.size() == 0) break;
-                                if(allows_newline(currline.back())) break;
-                                temp.push_front(currline.back());
-                                currline.pop_back();
+                                lines.push_back(currline);
+                                currline = {};
                             }
-                            // if we emptied currline put it all back
-                            if(currline.size() == 0)
+                            else
                             {
+                                std::deque<uint32_t> temp;
+                                while(1)
+                                {
+                                    if(currline.size() == 0) break;
+                                    if(allows_newline(currline.back())) break;
+                                    temp.push_front(currline.back());
+                                    currline.pop_back();
+                                }
+                                // if we emptied currline put it all back
+                                if(currline.size() == 0)
+                                {
+                                    for(auto c : temp) currline.push_back(c);
+                                    temp = {};
+                                }
+                                lines.push_back(currline);
+                                currline = {};
                                 for(auto c : temp) currline.push_back(c);
-                                temp = {};
                             }
-                            lines.push_back(currline);
-                            currline = {};
-                            for(auto c : temp) currline.push_back(c);
                         }
+                        
+                        currline.push_back(codepoint);
                     }
-                    
-                    currline.push_back(codepoint);
                 }
             }
+            if(currline.size() != 0)
+            {
+                lines.push_back(currline);
+                currline = {};
+            }
         }
-        if(currline.size() != 0)
-        {
-            lines.push_back(currline);
-            currline = {};
-        }
-        
         if(center_y)
             y = y1 + (y2-y1)/2 - (linespan*lines.size()*fontscale)/2;
         
         y += ascent*fontscale;
         
-        lastindex = 0;
         for(auto line : lines)
         {
+            uint32_t lastindex = 0;
             if(center_x)
                 x = x1 + (x2-x1)/2 - string_width_pixels(line, size)/2;
             float real_x = x;
@@ -549,10 +551,10 @@ struct graphics
                             for(int j = 0; j < width; j++)
                             {
                                 const int out_x = j + int_temp_x + xoff;
-                                //if (out_x < x1) continue;
-                                //if (out_x >= x2) break;
-                                if (out_x < 0) continue;
-                                if (out_x >= surface->w) break;
+                                if (out_x < x1) continue;
+                                if (out_x >= x2) break;
+                                //if (out_x < 0) continue;
+                                //if (out_x >= surface->w) break;
                                 const float alpha = data[i*width + j]/255.0f;
                                 if(alpha > 0.5f/255.0f) // skip trivial blank case
                                 {
