@@ -23,6 +23,7 @@ TODO:
 #include <map>
 #include <set>
 #include <vector>
+#include <deque>
 #include <algorithm>
 #include <fstream>
 
@@ -159,6 +160,33 @@ uint32_t utf8_pull(const unsigned char * text, size_t len, int * advance)
 uint32_t utf8_pull(const char * text, long long len, int * advance)
 {
     return utf8_pull((const unsigned char *)text, len, advance);
+}
+// nonconformant hacky garbage
+bool allows_newline(uint32_t codepoint)
+{
+    if((codepoint >= 0x00003400 and codepoint < 0x00004DBF) or
+       (codepoint >= 0x0000FE30 and codepoint < 0x0000FE4F) or
+       (codepoint >= 0x0000F900 and codepoint < 0x0000FAFF) or
+       (codepoint >= 0x00004E00 and codepoint < 0x00009FFF) or
+       (codepoint >= 0x00020000 and codepoint < 0x0002A6DF) or
+       (codepoint >= 0x0002a700 and codepoint < 0x0002b73f) or
+       (codepoint >= 0x0002b740 and codepoint < 0x0002b81f) or
+       (codepoint >= 0x0002b820 and codepoint < 0x0002ceaf) or
+       (codepoint >= 0x0002f800 and codepoint < 0x0002fa1f) or
+       (codepoint >= 0x00003040 and codepoint < 0x0000309f) or
+       (codepoint >= 0x000030a0 and codepoint < 0x000030ff) or
+       (codepoint >= 0x00002e80 and codepoint < 0x00002eff) or
+       (codepoint >= 0x00003000 and codepoint < 0x0000303f) or
+       (codepoint >= 0x00003300 and codepoint < 0x000033ff) or
+       
+       (codepoint <= 0xFF and !(
+           (codepoint >= 0x30 and codepoint <= 0x39) or
+           (codepoint >= 0x41 and codepoint <= 0x5A) or
+           (codepoint >= 0x61 and codepoint <= 0x7A)
+       )))
+       return true;
+   else
+       return false;
 }
 
 // SDL_MapRGB is written in a way that makes compilers not optimize it well for the most common surface format. This wrapper is more optimization-friendly.
@@ -314,6 +342,39 @@ struct graphics
         if(real_x > max_real_x) max_real_x = real_x;
         return ceil(max_real_x);
     }
+    // same but with a vector reference
+    int string_width_pixels(std::vector<uint32_t> & text, float size)
+    {
+        float fontscale = stbtt_ScaleForPixelHeight(&fontinfo, size);
+        
+        uint32_t lastindex = 0;
+        float real_x = 0;
+        float max_real_x = 0;
+        for(uint32_t codepoint : text)
+        {
+            if(codepoint == '\n')
+            {
+                lastindex = 0;
+                if(real_x > max_real_x) max_real_x = real_x;
+                real_x = 0;
+                continue;
+            }
+            int advance, bearing;
+            
+            uint32_t index = glyph_lookup(codepoint);
+            
+            stbtt_GetGlyphHMetrics(&fontinfo, index, &advance, &bearing);
+            if(lastindex != 0)
+                real_x += fontscale*stbtt_GetGlyphKernAdvance(&fontinfo, lastindex, index); // ?
+            
+            float advancepixels = fontscale*advance;
+            
+            real_x += advancepixels;
+            lastindex = index;
+        }
+        if(real_x > max_real_x) max_real_x = real_x;
+        return ceil(max_real_x);
+    }
     
     // Renders unicode text, wrapping at the right edge of the window if necessary. Does not support right-to-left or vertical text or ligatures, but does support kerning and astral unicode.
     // Takes a bitmap cache because font rasterization is not actually that fast.
@@ -323,31 +384,34 @@ struct graphics
     }
     void string(SDL_Surface * surface, std::map<uint64_t, crap> * cache, int x, int y, int x2, int y2, const char * text, uint8_t red, uint8_t green, uint8_t blue, float size)
     {
-        string(surface, cache, x, y, x, y, x2, y2, text, red, green, blue, size);
+        string(surface, cache, x, y, x, y, x2, y2, text, red, green, blue, size, false, false);
     }
     // TODO: Make centering part of string() instead of done in the mainloop's render logic, so that multi-line justification works properly instead of being a hack
     // FIXME: Make (e.g. english) text with spaces wrap by the word, not by the character
-    void string(SDL_Surface * surface, std::map<uint64_t, crap> * cache, int x, int y, int x1, int y1, int x2, int y2, const char * text, uint8_t red, uint8_t green, uint8_t blue, float size)
+    void string(SDL_Surface * surface, std::map<uint64_t, crap> * cache, int x, int y, int x1, int y1, int x2, int y2, const char * text, uint8_t red, uint8_t green, uint8_t blue, float size, bool center_x, bool center_y)
     {
         float fontscale = stbtt_ScaleForPixelHeight(&fontinfo, size);
         
-        float real_x = x;
-        
         size_t textlen = strlen(text);
-        uint32_t lastindex = 0;
         
         // stb_truetype's coordinate system renders at the baseline instead of the top left. That's fine but we want to render at the top left.
         int ascent, descent, linegap;
         stbtt_GetFontVMetrics(&fontinfo, &ascent, &descent, &linegap);
         int linespan = ascent - descent + linegap;
         
-        y += ascent*fontscale;
-        
         y1 = max(0, y1);
         x1 = max(0, x1);
         y2 = min(surface->h, y2);
         x2 = min(surface->w, x2);
         
+        std::vector<std::vector<uint32_t>> lines;
+        std::vector<uint64_t> widths;
+        std::vector<uint32_t> currline;
+        float real_x = x;
+        if(center_x)
+            real_x = x1;
+        
+        uint32_t lastindex = 0;
         while(textlen > 0)
         {
             int advance = 0;
@@ -363,120 +427,193 @@ struct graphics
                 {
                     if(codepoint == '\n')
                     {
-                        lastindex = 0;
-                        y += linespan*fontscale;
-                        real_x = x1;
+                        lines.push_back(currline);
+                        currline = {};
                         continue;
                     }
-                    
-                    // black magic begin
                     
                     int advance, bearing, width, height, xoff, yoff;
                     
                     uint32_t index = glyph_lookup(codepoint);
                     
                     stbtt_GetGlyphHMetrics(&fontinfo, index, &advance, &bearing);
+                    
                     if(lastindex != 0)
                         real_x += fontscale*stbtt_GetGlyphKernAdvance(&fontinfo, lastindex, index); // ?
-                    
                     float advancepixels = fontscale*advance;
                     
-                    if(advancepixels + real_x > x2)
+                    real_x += advancepixels;
+                    lastindex = index;
+                    
+                    if(real_x > x2)
                     {
                         lastindex = 0;
-                        y += linespan*fontscale;
-                        real_x = x1;
+                        real_x = x1+advancepixels;
+                        
+                        bool lastallowsnewline = false;
+                        if(currline.size() > 0)
+                            if(allows_newline(currline.back()))
+                                lastallowsnewline = true;
+                        if(allows_newline(codepoint) or lastallowsnewline)
+                        {
+                            lines.push_back(currline);
+                            currline = {};
+                        }
+                        else
+                        {
+                            std::deque<uint32_t> temp;
+                            while(1)
+                            {
+                                if(currline.size() == 0) break;
+                                if(allows_newline(currline.back())) break;
+                                temp.push_front(currline.back());
+                                currline.pop_back();
+                            }
+                            // if we emptied currline put it all back
+                            if(currline.size() == 0)
+                            {
+                                for(auto c : temp) currline.push_back(c);
+                                temp = {};
+                            }
+                            lines.push_back(currline);
+                            currline = {};
+                            for(auto c : temp) currline.push_back(c);
+                        }
                     }
                     
-                    if(y-ascent*fontscale > y2) break;
-                    
-                    //float bearingpixels = fontscale*bearing; // Not needed when using stbtt_GetCodepointBitmapSubpixel, it seems
-                    float temp_x = real_x;// + bearingpixels; // target x to draw at
-                    int int_temp_x = floor(temp_x);
-                    crap stuff = bitmap_lookup(&fontinfo, cache, index, temp_x-int_temp_x, fontscale);
-                    width = stuff.width;
-                    height = stuff.height;
-                    xoff = stuff.xoff;
-                    yoff = stuff.yoff;
-                    uint8_t * data = stuff.data;
-                    
-                    // black magic end
-                    
-                    // alpha-mixing glyph bitmap blitter
-                    if(render)
+                    currline.push_back(codepoint);
+                }
+            }
+        }
+        if(currline.size() != 0)
+        {
+            lines.push_back(currline);
+            currline = {};
+        }
+        
+        if(center_y)
+            y = y1 + (y2-y1)/2 - (linespan*lines.size()*fontscale)/2;
+        
+        y += ascent*fontscale;
+        
+        lastindex = 0;
+        for(auto line : lines)
+        {
+            if(center_x)
+                x = x1 + (x2-x1)/2 - string_width_pixels(line, size)/2;
+            float real_x = x;
+            for(uint32_t codepoint : line)
+            {
+                if(codepoint == '\n')
+                {
+                    continue;
+                }
+                
+                // black magic begin
+                
+                int advance, bearing, width, height, xoff, yoff;
+                
+                uint32_t index = glyph_lookup(codepoint);
+                
+                stbtt_GetGlyphHMetrics(&fontinfo, index, &advance, &bearing);
+                if(lastindex != 0)
+                    real_x += fontscale*stbtt_GetGlyphKernAdvance(&fontinfo, lastindex, index); // ?
+                
+                float advancepixels = fontscale*advance;
+                
+                if(y-ascent*fontscale > y2) break;
+                
+                //float bearingpixels = fontscale*bearing; // Not needed when using stbtt_GetCodepointBitmapSubpixel, it seems
+                float temp_x = real_x;// + bearingpixels; // target x to draw at
+                int int_temp_x = floor(temp_x);
+                crap stuff = bitmap_lookup(&fontinfo, cache, index, temp_x-int_temp_x, fontscale);
+                width = stuff.width;
+                height = stuff.height;
+                xoff = stuff.xoff;
+                yoff = stuff.yoff;
+                uint8_t * data = stuff.data;
+                
+                // black magic end
+                
+                // alpha-mixing glyph bitmap blitter
+                if(render)
+                {
+                    // Avoid SDL_GetRGB/MapRGB if we're using the common trivial pixel format
+                    if(surface->format->format == SDL_PIXELFORMAT_RGB888)
                     {
-                        // Avoid SDL_GetRGB/MapRGB if we're using the common trivial pixel format
-                        if(surface->format->format == SDL_PIXELFORMAT_RGB888)
+                        for(int i = 0; i < height; i++)
                         {
-                            for(int i = 0; i < height; i++)
+                            const int out_y = i + y + yoff;
+                            if(out_y < y1) continue;
+                            if(out_y >= y2) break;
+                            for(int j = 0; j < width; j++)
                             {
-                                const int out_y = i + y + yoff;
-                                if(out_y < y1) continue;
-                                if(out_y >= y2) break;
-                                for(int j = 0; j < width; j++)
+                                const int out_x = j + int_temp_x + xoff;
+                                //if (out_x < x1) continue;
+                                //if (out_x >= x2) break;
+                                if (out_x < 0) continue;
+                                if (out_x >= surface->w) break;
+                                const float alpha = data[i*width + j]/255.0f;
+                                if(alpha > 0.5f/255.0f) // skip trivial blank case
                                 {
-                                    const int out_x = j + int_temp_x + xoff;
-                                    if (out_x < x1) continue;
-                                    if (out_x >= x2) break;
-                                    const float alpha = data[i*width + j]/255.0f;
-                                    if(alpha > 0.5f/255.0f) // skip trivial blank case
+                                    uint8_t * const pointer = ((uint8_t *)surface->pixels) + (out_y*surface->pitch + out_x*4);
+                                    if(alpha >= 1.0f) // optimize trivial opaque case
                                     {
-                                        uint8_t * const pointer = ((uint8_t *)surface->pixels) + (out_y*surface->pitch + out_x*4);
-                                        if(alpha >= 1.0f) // optimize trivial opaque case
-                                        {
-                                            pointer[2] = red;
-                                            pointer[1] = green;
-                                            pointer[0] = blue;
-                                        }
-                                        else
-                                        {
-                                            const uint8_t r = (1-alpha)*pointer[2] + alpha*red;
-                                            const uint8_t g = (1-alpha)*pointer[1] + alpha*green;
-                                            const uint8_t b = (1-alpha)*pointer[0] + alpha*blue;
-                        
-                                            pointer[2] = r;
-                                            pointer[1] = g;
-                                            pointer[0] = b;
-                                        }
+                                        pointer[2] = red;
+                                        pointer[1] = green;
+                                        pointer[0] = blue;
+                                    }
+                                    else
+                                    {
+                                        const uint8_t r = (1-alpha)*pointer[2] + alpha*red;
+                                        const uint8_t g = (1-alpha)*pointer[1] + alpha*green;
+                                        const uint8_t b = (1-alpha)*pointer[0] + alpha*blue;
+                    
+                                        pointer[2] = r;
+                                        pointer[1] = g;
+                                        pointer[0] = b;
                                     }
                                 }
                             }
                         }
-                        else
+                    }
+                    else
+                    {
+                        for(int i = 0; i < height; i++)
                         {
-                            for(int i = 0; i < height; i++)
+                            for(int j = 0; j < width; j++)
                             {
-                                for(int j = 0; j < width; j++)
-                                {
-                                    const float alpha = data[i*width + j]/255.0f;
-                                    
-                                    int out_y = i + y + yoff;
-                                    int out_x = j + int_temp_x + xoff;
-                                    if(out_y < 0 or out_y >= y2 or out_x < 0 or out_x >= x2) continue;
-                                    uint8_t * const pointer = ((uint8_t *)surface->pixels) + (out_y*surface->pitch + out_x*surface->format->BytesPerPixel);
-                                    
-                                    uint32_t output;
-                                    memcpy(&output, pointer, surface->format->BytesPerPixel); // FIXME: probably wrong on big endian
-                                    
-                                    uint8_t r, g, b;
-                                    SDL_GetRGB(output, surface->format, &r, &g, &b);
-                                    
-                                    r = (1-alpha)*r + alpha*red;
-                                    g = (1-alpha)*g + alpha*green;
-                                    b = (1-alpha)*b + alpha*blue;
-                
-                                    const uint32_t color = MapRGB(surface->format, r, g, b);
-                                    
-                                    memcpy(pointer, &color, surface->format->BytesPerPixel);
-                                }
+                                const float alpha = data[i*width + j]/255.0f;
+                                
+                                int out_y = i + y + yoff;
+                                int out_x = j + int_temp_x + xoff;
+                                if(out_y < 0 or out_y >= y2 or out_x < 0 or out_x >= x2) continue;
+                                uint8_t * const pointer = ((uint8_t *)surface->pixels) + (out_y*surface->pitch + out_x*surface->format->BytesPerPixel);
+                                
+                                uint32_t output;
+                                memcpy(&output, pointer, surface->format->BytesPerPixel); // FIXME: probably wrong on big endian
+                                
+                                uint8_t r, g, b;
+                                SDL_GetRGB(output, surface->format, &r, &g, &b);
+                                
+                                r = (1-alpha)*r + alpha*red;
+                                g = (1-alpha)*g + alpha*green;
+                                b = (1-alpha)*b + alpha*blue;
+            
+                                const uint32_t color = MapRGB(surface->format, r, g, b);
+                                
+                                memcpy(pointer, &color, surface->format->BytesPerPixel);
                             }
                         }
                     }
-                    
-                    real_x += advancepixels;
-                    lastindex = index;
                 }
+                
+                real_x += advancepixels;
+                lastindex = index;
             }
+            lastindex = 0;
+            y += linespan*fontscale;
+            real_x = x;
         }
     }
     
@@ -1984,25 +2121,11 @@ int main()
             }
             if(element->text != "")
             {
-                int x;
-                int y;
-                if(!element->textcenter_x)
-                    x = element->x1(&backend);
-                else
-                {
-                    x = (element->x1(&backend)+element->x2(&backend))/2;
-                    x -= backend.string_width_pixels(element->text.data(), element->textsize)/2;
-                    x = max(x, element->x1(&backend));
-                }
-                if(!element->textcenter_y)
-                    y = element->y1(&backend);
-                else
-                {
-                    y = (element->y1(&backend)+element->y2(&backend))/2;
-                    y -= backend.font_height_pixels(element->textsize)/2;
-                    y = max(y, element->y1(&backend));
-                }
-                backend.string(backend.surface, &element->bitmapcache, x, y, element->x1(&backend), element->y1(&backend), element->x2(&backend)+1, element->y2(&backend)+1, element->text.data(), element->foreground.r*factor, element->foreground.g*factor, element->foreground.b*factor, element->textsize);
+                int x = element->x1(&backend);
+                int y = element->y1(&backend);
+                backend.string(backend.surface, &element->bitmapcache, x, y, element->x1(&backend), element->y1(&backend), element->x2(&backend)+1, element->y2(&backend)+1,
+                    element->text.data(), element->foreground.r*factor, element->foreground.g*factor, element->foreground.b*factor, element->textsize,
+                    element->textcenter_x, element->textcenter_y);
             }
         }
         
