@@ -1805,6 +1805,10 @@ struct deckui
         float check_learning = available_learning.size()?(rand()/(float)RAND_MAX*available_learning.size()):-1;
         float check_review   = available_review  .size()?(rand()/(float)RAND_MAX*available_review  .size()):-1;
         
+        sort_new(available_new);
+        sort_learn(available_learning);
+        sort_review(available_review, now);
+        
         //printf("%d %.2f; %d %.2f; %d %.2f\n", available_new.size(), check_new, available_learning.size(), check_learning, available_review.size(), check_review);
         
         if(check_review > check_new and check_review > check_learning)
