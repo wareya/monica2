@@ -2018,7 +2018,7 @@ int main()
     // Pointless test text
     const char * prealphawarning = "Prealpha Software\nプレアルファ";
     int prealphasize = 16;
-    elements.push_back(new element(posdata(-backend.string_width_pixels(prealphawarning, prealphasize), LATE), posdata(-prealphasize*2, LATE), posdata(0, LATE), posdata(prealphasize*2, EARLY), false, false,
+    elements.push_back(new element(posdata(-ceil(backend.string_width_pixels(prealphawarning, prealphasize)), LATE), posdata(-prealphasize*2, LATE), posdata(0, LATE), posdata(prealphasize*2, EARLY), false, false,
         prealphawarning,
         0, 0, prealphasize, {0,0,0}, {255,255,255}));
     
