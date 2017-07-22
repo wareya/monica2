@@ -458,6 +458,9 @@ struct graphics
                                     lastallowsnewline = true;
                             if(allows_newline(codepoint) or lastallowsnewline)
                             {
+                                if(currline.size() > 0)
+                                    if(currline.back() == ' ')
+                                        currline.pop_back();
                                 lines.push_back(currline);
                                 currline = {};
                             }
@@ -477,6 +480,9 @@ struct graphics
                                     for(auto c : temp) currline.push_back(c);
                                     temp = {};
                                 }
+                                if(currline.size() > 0)
+                                    if(currline.back() == ' ')
+                                        currline.pop_back();
                                 lines.push_back(currline);
                                 currline = {};
                                 for(auto c : temp) currline.push_back(c);
@@ -507,9 +513,7 @@ struct graphics
             for(uint32_t codepoint : line)
             {
                 if(codepoint == '\n')
-                {
                     continue;
-                }
                 
                 // black magic begin
                 
