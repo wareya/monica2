@@ -452,7 +452,6 @@ struct graphics
                         if(real_x > x2)
                         {
                             lastindex = 0;
-                            real_x = x1+advancepixels;
                             
                             bool lastallowsnewline = false;
                             if(currline.size() > 0)
@@ -464,7 +463,7 @@ struct graphics
                                     if(currline.back() == ' ')
                                         currline.pop_back();
                                 lines.push_back(currline);
-                                currline = {};
+                                currline = {codepoint};
                             }
                             else
                             {
@@ -488,10 +487,13 @@ struct graphics
                                 lines.push_back(currline);
                                 currline = {};
                                 for(auto c : temp) currline.push_back(c);
+                                currline.push_back(codepoint);
                             }
+                            
+                            real_x = x1 + string_width_pixels(currline, size);
                         }
-                        
-                        currline.push_back(codepoint);
+                        else
+                            currline.push_back(codepoint);
                     }
                 }
             }
@@ -1326,6 +1328,8 @@ void load_format(deck * mydeck)
     }
 }
 
+bool queue_save = false;
+
 // user interface for the deck
 struct deckui
 {
@@ -1484,7 +1488,7 @@ struct deckui
         }
         for(auto b : backbuttons)
             b->active = false;
-        serialize(&currentdeck);
+        queue_save = true;
     }
     void unstash()
     {
@@ -1543,7 +1547,7 @@ struct deckui
             if(f->type == 1) e->active = false;
         }
         
-        serialize(&currentdeck);
+        queue_save = true;
     }
     
     // answers and reschedules the current note
@@ -1659,7 +1663,7 @@ struct deckui
         
         schedule.time_last_seen = now;
         
-        serialize(&currentdeck);
+        queue_save = true;
         
         next(now);
     }
@@ -2152,6 +2156,12 @@ int main()
         backend.string(backend.surface, nullptr, backend.surface->w-backend.string_width_pixels(s.data(), 24)-5, 5, s.data(), 255, 255, 255, 24);
         
         backend.update();
+        
+        if(queue_save)
+        {
+            mydeckui.serialize(&mydeckui.currentdeck);
+            queue_save = false;
+        }
         
         SDL_Delay(1);
     }
