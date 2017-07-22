@@ -429,6 +429,8 @@ struct graphics
                     {
                         if(codepoint == '\n')
                         {
+                            lastindex = 0;
+                            real_x = x1;
                             lines.push_back(currline);
                             currline = {};
                             continue;
@@ -619,7 +621,6 @@ struct graphics
             }
             lastindex = 0;
             y += linespan*fontscale;
-            real_x = x;
         }
     }
     
