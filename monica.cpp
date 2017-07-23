@@ -162,8 +162,21 @@ uint32_t utf8_pull(const char * text, long long len, int * advance)
     return utf8_pull((const unsigned char *)text, len, advance);
 }
 // nonconformant hacky garbage
-bool allows_newline(uint32_t codepoint)
+// 2: allows newline always; 1: allows newline to the right; 0: does not allow newline
+int allows_newline(uint32_t codepoint)
 {
+    if(codepoint <= 0xFF)
+    {
+        if ((codepoint >= 0x30 and codepoint <= 0x39) or
+            (codepoint >= 0x41 and codepoint <= 0x5A) or
+            (codepoint >= 0x61 and codepoint <= 0x7A))
+            return 0;
+        else if(codepoint > 0x20 and codepoint != 0x7F)
+            return 1;
+        else
+            return 2;
+    }
+
     if((codepoint >= 0x00003400 and codepoint < 0x00004DBF) or
        (codepoint >= 0x0000FE30 and codepoint < 0x0000FE4F) or
        (codepoint >= 0x0000F900 and codepoint < 0x0000FAFF) or
@@ -177,16 +190,10 @@ bool allows_newline(uint32_t codepoint)
        (codepoint >= 0x000030a0 and codepoint < 0x000030ff) or
        (codepoint >= 0x00002e80 and codepoint < 0x00002eff) or
        (codepoint >= 0x00003000 and codepoint < 0x0000303f) or
-       (codepoint >= 0x00003300 and codepoint < 0x000033ff) or
-       
-       (codepoint <= 0xFF and !(
-           (codepoint >= 0x30 and codepoint <= 0x39) or
-           (codepoint >= 0x41 and codepoint <= 0x5A) or
-           (codepoint >= 0x61 and codepoint <= 0x7A)
-       )))
-       return true;
-   else
-       return false;
+       (codepoint >= 0x00003300 and codepoint < 0x000033ff))
+       return 2;
+   
+   return 0;
 }
 
 // SDL_MapRGB is written in a way that makes compilers not optimize it well for the most common surface format. This wrapper is more optimization-friendly.
@@ -455,9 +462,9 @@ struct graphics
                             
                             bool lastallowsnewline = false;
                             if(currline.size() > 0)
-                                if(allows_newline(currline.back()))
+                                if(allows_newline(currline.back()) != 0)
                                     lastallowsnewline = true;
-                            if(allows_newline(codepoint) or lastallowsnewline)
+                            if(allows_newline(codepoint) == 2 or lastallowsnewline)
                             {
                                 if(currline.size() > 0)
                                     if(currline.back() == ' ')
@@ -471,7 +478,7 @@ struct graphics
                                 while(1)
                                 {
                                     if(currline.size() == 0) break;
-                                    if(allows_newline(currline.back())) break;
+                                    if(allows_newline(currline.back()) != 0) break;
                                     temp.push_front(currline.back());
                                     currline.pop_back();
                                 }
@@ -2145,10 +2152,17 @@ int main()
         }
         
         auto time = SDL_GetTicks();
+        auto timespan = (time-start);
         //float constant = 0.9999f;
         //float constant = 0.99;
-        float constant = 0.9;
-        smoothtime = constant*smoothtime + (1-constant)*(time-start);
+        float constant;
+        if(timespan > 5)
+            constant = 0.9;
+        if(timespan > 0)
+            constant = 0.99;
+        else
+            constant = 0.999;
+        smoothtime = constant*smoothtime + (1-constant)*timespan;
         start = time;
         
         auto s = std::to_string(int(round(1000/smoothtime)))+"fps";
