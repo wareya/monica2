@@ -1809,12 +1809,11 @@ struct deckui
             }
         }
         
-        // pure laziness
-        srand(now);
-        rand(); // some rand() implementations are broken and seed after the next call
         float check_new      = available_new     .size()?(rand()/(float)RAND_MAX*available_new     .size()):-1;
         float check_learning = available_learning.size()?(rand()/(float)RAND_MAX*available_learning.size()):-1;
         float check_review   = available_review  .size()?(rand()/(float)RAND_MAX*available_review  .size()):-1;
+        
+        printf("%.2f/%d %.2f/%d %.2f/%d\n", check_new, available_new.size(), check_learning, available_learning.size(), check_review, available_review.size());
         
         sort_new(available_new);
         sort_learn(available_learning);
@@ -1998,7 +1997,12 @@ struct deckui
 };
 
 int main()
-{
+{    
+    // pure laziness
+    srand(time());
+    // some rand() implementations are broken and seeding only takes effect after the next call to rand()
+    rand();
+    
     // Initialize
     std::vector<element*> elements;
     
