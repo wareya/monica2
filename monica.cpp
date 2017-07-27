@@ -1711,8 +1711,9 @@ struct deckui
             // if same note, sort by their format's unique ID instead
             else
                 return a->f->unique_id < b->f->unique_id;
-                
         });
+        
+        while(cardlist.size() > new_notes_today) cardlist.pop_back();
     }
     void sort_learn(std::vector<card *> & cardlist)
     {
@@ -1809,15 +1810,15 @@ struct deckui
             }
         }
         
+        sort_new(available_new);
+        sort_learn(available_learning);
+        sort_review(available_review, now);
+        
         float check_new      = available_new     .size()?(rand()/(float)RAND_MAX*available_new     .size()):-1;
         float check_learning = available_learning.size()?(rand()/(float)RAND_MAX*available_learning.size()):-1;
         float check_review   = available_review  .size()?(rand()/(float)RAND_MAX*available_review  .size()):-1;
         
         printf("%.2f/%d %.2f/%d %.2f/%d\n", check_new, available_new.size(), check_learning, available_learning.size(), check_review, available_review.size());
-        
-        sort_new(available_new);
-        sort_learn(available_learning);
-        sort_review(available_review, now);
         
         //printf("%d %.2f; %d %.2f; %d %.2f\n", available_new.size(), check_new, available_learning.size(), check_learning, available_review.size(), check_review);
         
