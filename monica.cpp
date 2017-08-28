@@ -887,7 +887,7 @@ struct note {
         const char * text = line.data();
         const char * start = text;
         
-        bool quoted = false; // -1: unknown (start state); 0: false; 1: true
+        bool quoted = false;
         bool escaping = false;
         
         std::string current;
@@ -900,42 +900,7 @@ struct note {
         // Newlines are \n. 0x20 in the byte stream triggers the end of the line, just like 0x00.
         while(text - start < textlen)
         {
-            if(!quoted and *text == '"')
-            {
-                quoted = true;
-            }
-            else if(*text == '\t' and !quoted)
-            {
-                fields.push_back(current);
-                current = "";
-            }
-            else if(*text == '"' and quoted and !escaping)
-            {
-                text++;
-                if(text - start >= textlen)
-                {
-                    fields.push_back(current);
-                    current = "";
-                }
-                // FIXME: There's a pointer advancement bug here. Can you find it?
-                else if(*text == '\t' or *text == '\n' or *text == '\0') // only " that are adjecant with a tab are the end " to a field
-                {
-                    fields.push_back(current);
-                    current = "";
-                }
-                else
-                    current += '"';
-            }
-            else if(*text == '\\' and !escaping)
-            {
-                escaping = true;
-            }
-            else if(*text == '\n' or *text == '\0')
-            {
-                fields.push_back(current);
-                break;
-            }
-            else if (escaping)
+            if (escaping)
             {
                 if(*text == '\\') // escaped backslash
                     current += '\\';
@@ -949,6 +914,41 @@ struct note {
                     current += *text;
                 }
                 escaping = false;
+            }
+            else if(*text == '\\')
+            {
+                escaping = true;
+            }
+            else if(*text == '"')
+            {
+                quoted = !quoted;
+            }
+            else if(*text == '\t' and !quoted)
+            {
+                fields.push_back(current);
+                current = "";
+            }
+            else if(*text == '"' and quoted)
+            {
+                text++;
+                if(text - start >= textlen)
+                {
+                    fields.push_back(current);
+                    current = "";
+                }
+                else if(*text == '\t' or *text == '\n' or *text == '\0') // only " that are adjecant with a tab are the end " to a field
+                {
+                    if(*text == '\0') break;
+                    fields.push_back(current);
+                    current = "";
+                }
+                else
+                    current += '"';
+            }
+            else if(*text == '\n' or *text == '\0')
+            {
+                fields.push_back(current);
+                break;
             }
             else
                 current += *text;
