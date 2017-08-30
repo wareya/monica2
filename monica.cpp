@@ -1,6 +1,3 @@
-
-
-
 /*
 TODO:
 - Support for multiple decks via folders; deck selection UI
@@ -30,7 +27,7 @@ TODO:
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "include/stb_truetype.h"
 
-#define USE_SDL_EVERYWHERE 0
+#define USE_SDL_EVERYWHERE 1
 
 #ifdef max
 #undef max
@@ -42,6 +39,7 @@ TODO:
 #endif
 #define min(a,b) ((a) < (b) ? (a) : (b))
 
+bool debug = false;
 
 // Returns a utf-32 codepoint
 // Returns 0xFFFFFFFF if there was any error decoding the codepoint. There are two error types: decoding errors (invalid utf-8) and buffer overruns (the buffer cuts off mid-codepoint).
@@ -240,8 +238,12 @@ crap bitmap_lookup(stbtt_fontinfo * fontinfo, std::map<uint64_t, crap> * bitmapc
     if(subpixel == 4) subpixel = 3;
     uint64_t key = (uint64_t(index) << 2) + (subpixel & 0b11);
     if(bitmapcache)
+    {
         if(bitmapcache->count(key) > 0 and cache)
+        {
             return (*bitmapcache)[key];
+        }
+    }
     
     crap data;
     data.data = stbtt_GetGlyphBitmapSubpixel(fontinfo, fontscale, fontscale, subpixel/3.0, 0, index, &data.width, &data.height, &data.xoff, &data.yoff);
@@ -1137,7 +1139,7 @@ struct deck
             for(auto && [ k, n ] : notes)
             {
                 auto c = try_insert_new_card(n->unique_id, f->unique_id);
-                if(c != nullptr) puts("Added a missing card");
+                if(debug) if(c != nullptr) puts("Added a missing card");
             }
         }
     }
@@ -1147,7 +1149,7 @@ struct deck
 
 void load_notes(deck * mydeck)
 {
-    puts("loading note");
+    if(debug) puts("loading note");
     std::ifstream file("notes.txt");
     std::string str;
     uint64_t i = 0;
@@ -1390,13 +1392,13 @@ struct deckui
         auto cardlist = available(now);
         if(cardlist.size() > 0)
         {
-            puts("setting up initial card");
+            if(debug) puts("setting up initial card");
             currentcard = cardlist[0];
             refresh(currentcard);
         }
         else
         {
-            puts("no available cards to set up");
+            if(debug) puts("no available cards to set up");
             currentcard = nullptr;
             stash();
         }
@@ -1479,7 +1481,7 @@ struct deckui
     void stash()
     {
         displaystate = 0;
-        puts("calling stash");
+        if(debug) puts("calling stash");
         stashed = true;
         for(auto p : associations)
         {
@@ -1490,7 +1492,7 @@ struct deckui
         donefornow->active = true;
         for(auto b : frontbuttons)
         {
-            puts("setting front button to inactive");
+            if(debug) puts("setting front button to inactive");
             b->active = false;
         }
         for(auto b : backbuttons)
@@ -1511,7 +1513,7 @@ struct deckui
         
         if(currentcard == nullptr)
         {
-            puts("Refreshed card is nullptr");
+            if(debug) puts("Refreshed card is nullptr");
             return;
         }
         
@@ -1524,7 +1526,7 @@ struct deckui
         currentcard->s.time_last_seen = time();
         for(auto p : associations)
         {
-            puts("doing formatting");
+            if(debug) puts("doing formatting");
             auto f = p.first;
             auto e = p.second;
             e->text = do_format(f->format, currentcard);
@@ -1590,14 +1592,14 @@ struct deckui
                     // check the consecutive flunk counter
                     if(schedule.consecutive_flunks > 0)
                     {
-                        puts("learning flunk");
+                        if(debug) puts("learning flunk");
                         schedule.consecutive_flunks--;
                     }
                     // if we exhausted our consecutive flunks on first learning stage cards, we're leeching
                     // (the consecutive flunk count is only reset on graduation when buried)
                     else
                     {
-                        puts("learning flunk (leech, bury)");
+                        if(debug) puts("learning flunk (leech, bury)");
                         schedule.consecutive_flunks = 8;
                         schedule_bury(now, schedule, 1);
                     }
@@ -1610,13 +1612,13 @@ struct deckui
                 
                 if(schedule.learning > 0)
                 {
-                    puts("learning step");
+                    if(debug) puts("learning step");
                     schedule_minutes(now, schedule, 5);
                 }
                 // was the last learning stage: graduated, one day
                 else // graduation
                 {
-                    puts("learning graduation");
+                    if(debug) puts("learning graduation");
                     schedule_days(now, schedule, 1);
                     schedule.consecutive_flunks = 8;
                 }
@@ -1632,7 +1634,7 @@ struct deckui
             {
                 if(rank == 0)
                 {
-                    puts("followup flunk");
+                    if(debug) puts("followup flunk");
                     schedule.learning = 2;
                     schedule.times_flunked++;
                     schedule.last_good_day_interval = 1; // no longer a followup card
@@ -1641,7 +1643,7 @@ struct deckui
                 // 
                 else
                 {
-                    puts("followup pass");
+                    if(debug) puts("followup pass");
                     schedule.times_passed++;
                     schedule_days(now, schedule, schedule.last_good_day_interval); // reset to last recent good interval instead of using a low interval
                 }
@@ -1651,7 +1653,7 @@ struct deckui
             {
                 if(rank == 0)
                 {
-                    puts("rep flunk");
+                    if(debug) puts("rep flunk");
                     schedule.learning = 2;
                     schedule.times_flunked++;
                     // last_good_day_interval is whatever the *previous* interval was
@@ -1660,7 +1662,7 @@ struct deckui
                 }
                 else
                 {
-                    puts("rep pass");
+                    if(debug) puts("rep pass");
                     schedule.times_passed++;
                     schedule.last_good_day_interval = schedule.day_interval;
                     schedule_days(now, schedule, schedule.day_interval*schedule.ease);
@@ -1753,7 +1755,7 @@ struct deckui
         std::vector<card *> available_learning;
         std::vector<card *> available_review;
         std::vector<card *> learning_cards;
-        puts("making list of available cards");
+        if(debug) puts("making list of available cards");
         for(auto && [k, card] : currentdeck.cards)
         {
             auto & schedule = card->s;
@@ -1761,7 +1763,7 @@ struct deckui
             // if buried, skip
             if((schedule.days_repped > 0 or schedule.learning == 0) and now < schedule.day_buried_until)
             {
-                puts("Buried card");
+                if(debug) puts("Buried card");
                 continue;
             }
             
@@ -1771,21 +1773,21 @@ struct deckui
             // learning card, ready
             if(schedule.learning > 0 and schedule.days_repped > 0 and now >= schedule.time_scheduled_for)
             {
-                puts("learning card");
+                if(debug) puts("learning card");
                 available_learning.push_back(card);
             }
             // new card
             else if(schedule.learning > 0 and schedule.days_repped == 0 and new_notes_today > 0)
             {
-                puts("new card");
+                if(debug) puts("new card");
                 available_new.push_back(card);
             }
             // rep card
             else if(schedule.learning == 0 and days_between(now, schedule.time_scheduled_for) <= 0 and schedule.day_interval > 0)
             {
-                puts("rep card");
-                printf("scheduled for: %lld\n", schedule.time_scheduled_for);
-                printf("now: %lld\n", now);
+                if(debug) puts("rep card");
+                if(debug) printf("scheduled for: %lld\n", schedule.time_scheduled_for);
+                if(debug) printf("now: %lld\n", now);
                 available_review.push_back(card);
             }
         }
@@ -1803,7 +1805,7 @@ struct deckui
                 // finally, queue up available cards
                 if(now >= schedule.time_scheduled_for)
                 {
-                    puts("unprepared card");
+                    if(debug) puts("unprepared card");
                     available_learning.push_back(card);
                 }
                 
@@ -1818,7 +1820,7 @@ struct deckui
         float check_learning = available_learning.size()?(rand()/(float)RAND_MAX*available_learning.size()):-1;
         float check_review   = available_review  .size()?(rand()/(float)RAND_MAX*available_review  .size()):-1;
         
-        printf("%.2f/%d %.2f/%d %.2f/%d\n", check_new, available_new.size(), check_learning, available_learning.size(), check_review, available_review.size());
+        if(debug) printf("%.2f/%d %.2f/%d %.2f/%d\n", check_new, available_new.size(), check_learning, available_learning.size(), check_review, available_review.size());
         
         //printf("%d %.2f; %d %.2f; %d %.2f\n", available_new.size(), check_new, available_learning.size(), check_learning, available_review.size(), check_review);
         
@@ -2172,7 +2174,8 @@ int main()
         
         auto s = std::to_string(int(round(1000/smoothtime)))+"fps";
         render = true;
-        backend.string(backend.surface, nullptr, backend.surface->w-backend.string_width_pixels(s.data(), 24)-5, 5, s.data(), 255, 255, 255, 24);
+        static std::map<uint64_t, crap> bitmapcache;
+        backend.string(backend.surface, &bitmapcache, backend.surface->w-backend.string_width_pixels(s.data(), 24)-5, 5, s.data(), 255, 255, 255, 24);
         
         backend.update();
         
@@ -2182,7 +2185,7 @@ int main()
             queue_save = false;
         }
         
-        SDL_Delay(1);
+        //SDL_Delay(1);
     }
     
     return 0;
